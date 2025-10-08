@@ -111,7 +111,7 @@ def prepare_dashboard_data(
 
     delta_label = _format_delta(total_spend, prev_total)
 
-    category_df = _build_category_breakdown(current_month_expenses)
+    category_df = _build_category_breakdown(current_month_expenses, previous_month_expenses)
     progress_rows = _build_progress_rows(current_month_expenses, total_spend)
     vendor_rows = _build_vendor_rows(current_month_expenses)
     insights = _build_insights(
@@ -289,15 +289,52 @@ def _compute_category_total(expenses: pd.DataFrame, category_name: str) -> float
     return float(max(total, 0.0))
 
 
-def _build_category_breakdown(expenses: pd.DataFrame) -> pd.DataFrame:
-    if expenses.empty:
-        return pd.DataFrame(columns=["Category", "Value"])
+def _build_category_breakdown(
+    current_expenses: pd.DataFrame,
+    previous_expenses: pd.DataFrame,
+) -> pd.DataFrame:
+    if current_expenses.empty:
+        return pd.DataFrame(
+            columns=[
+                "Category",
+                "CurrentValue",
+                "PreviousValue",
+                "Share",
+                "PctChange",
+                "ChangeAmount",
+                "Rank",
+            ]
+        )
 
-    totals = expenses.groupby("category_label")["spend"].sum().sort_values(ascending=False)
-    totals = totals[totals > 0]
-    return totals.head(5).reset_index().rename(
-        columns={"category_label": "Category", "spend": "Value"}
+    current_totals = (
+        current_expenses.groupby("category_label")["spend"].sum().sort_values(ascending=False)
     )
+    current_totals = current_totals[current_totals > 0]
+
+    previous_totals = previous_expenses.groupby("category_label")["spend"].sum()
+
+    top_categories = current_totals.head(8)
+    total_value = float(current_totals.sum()) if not current_totals.empty else 0.0
+
+    breakdown = top_categories.reset_index().rename(
+        columns={"category_label": "Category", "spend": "CurrentValue"}
+    )
+    breakdown["PreviousValue"] = breakdown["Category"].map(previous_totals).fillna(0.0)
+
+    current_values = breakdown["CurrentValue"].astype(float)
+    prev_values = breakdown["PreviousValue"].astype(float)
+
+    if total_value > 0:
+        breakdown["Share"] = current_values / total_value
+    else:
+        breakdown["Share"] = 0.0
+
+    pct_change = np.where(prev_values > 0, (current_values - prev_values) / prev_values, np.nan)
+    breakdown["PctChange"] = pct_change
+    breakdown["ChangeAmount"] = current_values - prev_values
+    breakdown["Rank"] = np.arange(1, len(breakdown) + 1)
+
+    return breakdown
 
 
 def _build_progress_rows(expenses: pd.DataFrame, total_spend: float) -> list[ProgressRow]:
@@ -446,7 +483,7 @@ def _build_insights(
         insights.append(
             (
                 f"Top category: <strong>{top_category['Category']}</strong> at "
-                f"£{top_category['Value']:,.0f}."
+                f"£{top_category['CurrentValue']:,.0f}."
             )
         )
 

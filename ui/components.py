@@ -132,21 +132,6 @@ def inject_css() -> None:
             white-space: nowrap;
           }
 
-          .ps-legend {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            margin-top: 8px;
-            color: #1F2937;
-            font-weight: 600;
-          }
-
-          .ps-legend-item {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-          }
-
           .ps-row {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(0, 1fr));

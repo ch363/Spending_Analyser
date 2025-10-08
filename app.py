@@ -17,7 +17,6 @@ from lib.summary import (
 )
 from ui.charts import (
     build_category_chart,
-    build_category_legend_rows,
     build_cumulative_chart,
     build_spending_chart,
     build_vendor_chart,
@@ -75,18 +74,41 @@ def _render_this_month_card(summary: MonthlySummary) -> None:
 
 
 def _render_category_card(category_df: pd.DataFrame) -> None:
-    """Render the spend-by-category donut chart alongside a custom legend."""
+    """Render the spend-by-category comparison chart and a ranked summary."""
+
+    if category_df.empty:
+        st.info("No category spend recorded for this month yet.")
+        return
 
     chart = build_category_chart(category_df)
-    chart_col, legend_col = st.columns([2, 1])
-    with chart_col:
-        st.altair_chart(chart, use_container_width=True)
-    with legend_col:
-        legend_html = "".join(build_category_legend_rows(category_df))
-        st.markdown(
-            f"<div class='ps-legend'>{legend_html}</div>",
-            unsafe_allow_html=True,
-        )
+    st.altair_chart(chart, use_container_width=True)
+
+    def _fmt_currency(value: float) -> str:
+        return f"£{value:,.0f}"
+
+    def _fmt_pct(value: float | None) -> str:
+        if value is None or pd.isna(value):
+            return "—"
+        return f"{value:+.1%}"
+
+    def _fmt_share(value: float | None) -> str:
+        if value is None or pd.isna(value):
+            return "—"
+        return f"{value:.1%}"
+
+    ranked = category_df.sort_values("CurrentValue", ascending=False).head(8).copy()
+    table = ranked.assign(
+        Current=ranked["CurrentValue"].map(_fmt_currency),
+        Previous=ranked["PreviousValue"].map(_fmt_currency),
+        **{
+            "Change (£)": ranked["ChangeAmount"].map(_fmt_currency),
+            "Change (%)": ranked["PctChange"].apply(_fmt_pct),
+            "Share": ranked["Share"].apply(_fmt_share),
+        },
+    )[
+        ["Category", "Current", "Previous", "Change (£)", "Change (%)", "Share"]
+    ]
+    st.dataframe(table, use_container_width=True, hide_index=True)
 
 
 def _render_details_card(
@@ -141,7 +163,7 @@ def _render_dashboard(data: DashboardData) -> None:
         with card("This Month", suffix="Normal for you"):
             _render_this_month_card(summary)
     with row_one_right:
-        with card("Spending over time", suffix="Normal for you"):
+        with card("This months daily spend", suffix="Normal for you"):
             chart = build_spending_chart(data["daily_spend_df"])
             st.altair_chart(chart, use_container_width=True)
 
