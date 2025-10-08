@@ -81,7 +81,7 @@ def _render_category_card(category_df: pd.DataFrame) -> None:
         return
 
     chart = build_category_chart(category_df)
-    st.altair_chart(chart, use_container_width=True)
+    st.plotly_chart(chart, use_container_width=True, key="category-donut")
 
     def _fmt_currency(value: float) -> str:
         return f"£{value:,.0f}"

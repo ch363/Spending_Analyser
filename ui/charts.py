@@ -4,6 +4,7 @@ from typing import TypeVar
 
 import altair as alt
 import pandas as pd
+import plotly.express as px
 
 _TIME_FORMAT = "%d %b"
 _LABEL_COLOR = "#475569"
@@ -206,112 +207,71 @@ def build_cumulative_chart(cumulative_df: pd.DataFrame) -> alt.LayerChart:
     return _configure_chart(chart)
 
 
-def build_category_chart(category_df: pd.DataFrame) -> alt.LayerChart:
-    """Render a bar-based category comparison chart."""
+def build_category_chart(category_df: pd.DataFrame):
+    """Render a donut chart for category spend distribution using Plotly."""
+
+    palette = [
+        "#0C6FFD",
+        "#5DA9FF",
+        "#FF3B30",
+        "#F97316",
+        "#22C55E",
+        "#7C3AED",
+        "#F59E0B",
+        "#FACC15",
+    ]
 
     if category_df.empty:
         empty = pd.DataFrame({"Category": [], "CurrentValue": []})
-        placeholder = alt.Chart(empty).mark_bar().encode(
-            x=alt.X("CurrentValue:Q", title="Spend (£)"),
-            y=alt.Y("Category:N", title=None),
-        )
-        return _configure_chart(alt.layer(placeholder))
+        fig = px.pie(empty, names="Category", values="CurrentValue", hole=0.55)
+        fig.update_layout(showlegend=False, margin=dict(l=0, r=0, t=0, b=0))
+        return fig
 
-    data = category_df.copy()
-    data = data.sort_values("CurrentValue", ascending=True)
-    sort_order = data["Category"].tolist()
-
-    current_peak = float(data["CurrentValue"].max() or 0.0)
-    previous_peak = float(data["PreviousValue"].max() or 0.0)
-    max_value = max(current_peak, previous_peak)
-    if max_value <= 0:
-        max_value = 1.0
-
-    x_scale = alt.Scale(domain=(0, max_value * 1.05), nice=True, zero=True)
-    y_axis = alt.Y(
-        "Category:N",
-        sort=sort_order,
-        title=None,
-        axis=alt.Axis(
-            labelColor=_LABEL_COLOR,
-            labelFont=_LABEL_FONT,
-            labelFontSize=_LABEL_SIZE,
-            ticks=False,
-        ),
-    )
-
-    base = alt.Chart(data).properties(height=320)
-
-    previous = base.mark_bar(color="#E2E8F0", size=22).encode(
-        x=alt.X("PreviousValue:Q", scale=x_scale, axis=None),
-        y=y_axis,
-    )
-
-    rank_domain = sorted(data["Rank"].astype(int).tolist())
-
-    palette = [
-        "#3B82F6",
-        "#6366F1",
-        "#8B5CF6",
-        "#D946EF",
-        "#F97316",
-        "#22C55E",
-        "#0EA5E9",
-        "#14B8A6",
-    ]
-    if len(rank_domain) > len(palette):
-        repeats = (len(rank_domain) // len(palette)) + 1
-        color_range = (palette * repeats)[: len(rank_domain)]
+    data = category_df.sort_values("CurrentValue", ascending=False).reset_index(drop=True)
+    if len(data) > len(palette):
+        repeats = (len(data) // len(palette)) + 1
+        color_sequence = (palette * repeats)[: len(data)]
     else:
-        color_range = palette[: len(rank_domain)]
+        color_sequence = palette[: len(data)]
 
-    current = base.mark_bar(cornerRadiusTopRight=6, cornerRadiusBottomRight=6).encode(
-        x=alt.X(
-            "CurrentValue:Q",
-            scale=x_scale,
-            axis=alt.Axis(
-                title="Spend (£)",
-                labelColor=_LABEL_COLOR,
-                labelFont=_LABEL_FONT,
-                labelFontSize=_LABEL_SIZE,
-                labelPadding=8,
-                tickColor=_DOMAIN_COLOR,
-                domainColor=_DOMAIN_COLOR,
-                gridColor=_GRID_COLOR,
-                ticks=False,
-            ),
-        ),
-        y=y_axis,
-        color=alt.Color(
-            "Rank:O",
-            scale=alt.Scale(domain=rank_domain, range=color_range),
-            legend=None,
-        ),
-        tooltip=[
-            alt.Tooltip("Category:N", title="Category"),
-            alt.Tooltip("CurrentValue:Q", title="Current spend", format="£,.0f"),
-            alt.Tooltip("PreviousValue:Q", title="Last month", format="£,.0f"),
-            alt.Tooltip("ChangeAmount:Q", title="Change", format="£,.0f"),
-            alt.Tooltip("PctChange:Q", title="Change %", format="+.1%"),
-            alt.Tooltip("Share:Q", title="Share", format=".1%"),
-        ],
+    fig = px.pie(
+        data,
+        names="Category",
+        values="CurrentValue",
+        hole=0.55,
+        color="Category",
+        color_discrete_sequence=color_sequence,
     )
 
-    labels = base.mark_text(
-        align="left",
-        baseline="middle",
-        dx=6,
-        font=_LABEL_FONT,
-        fontSize=12,
-        color="#1F2937",
-    ).encode(
-        x=alt.X("CurrentValue:Q", scale=x_scale),
-        y=y_axis,
-        text=alt.Text("Share:Q", format=".1%"),
+    fig.update_traces(
+        textposition="inside",
+        texttemplate="%{label}<br>%{percent:.1%}",
+        customdata=data[["CurrentValue", "Share", "ChangeAmount", "PctChange"]],
+        hovertemplate=(
+            "%{label}<br>"
+            "Spend: £%{customdata[0]:,.0f}<br>"
+            "Share: %{customdata[1]:.1%}<br>"
+            "Change: £%{customdata[2]:,.0f}<br>"
+            "Change %: %{customdata[3]:+.1%}<extra></extra>"
+        ),
+        marker=dict(line=dict(color="#FFFFFF", width=2)),
     )
 
-    chart = previous + current + labels
-    return _configure_chart(chart)
+    fig.update_layout(
+        margin=dict(l=0, r=0, t=0, b=0),
+        legend=dict(
+            title="",
+            orientation="v",
+            yanchor="middle",
+            y=0.5,
+            xanchor="left",
+            x=1.05,
+            font=dict(color=_LABEL_COLOR, family=_LABEL_FONT, size=_LABEL_SIZE),
+        ),
+        showlegend=True,
+    )
+
+    return fig
 
 
 def build_vendor_chart(vendor_df: pd.DataFrame) -> alt.Chart:
