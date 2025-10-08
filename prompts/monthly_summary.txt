@@ -1,0 +1,3 @@
+[Monthly summary prompt placeholder]
+
+Describe the instructions for generating a monthly spending summary here.
