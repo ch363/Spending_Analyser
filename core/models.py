@@ -8,8 +8,9 @@ from typing import TYPE_CHECKING, TypedDict
 import pandas as pd
 
 if TYPE_CHECKING:  # pragma: no cover - import for typing only
-    from analytics.forecast import CashflowRunway
-    from analytics.recurring import DuplicateEntry, RecurringEntry
+    from analytics.duplicates import DuplicateEntry
+    from analytics.forecasting import CashflowRunway
+    from analytics.recurring import RecurringEntry
 
 class ProgressRow(TypedDict):
     category: str
