@@ -18,7 +18,13 @@ A Streamlit dashboard for exploring synthetic spending insights, featuring polis
    pip install -r requirements.txt
    ```
 
-2. Launch the dashboard:
+2. Configure your OpenAI credentials:
+
+   - Copy `.streamlit/secrets.example.toml` to `.streamlit/secrets.toml`.
+   - Update the `api_key` value with your OpenAI key and, if needed, override the model or base URL.
+   - Keep the real `secrets.toml` out of version control.
+
+3. Launch the dashboard:
 
    ```bash
    streamlit run app.py
@@ -29,3 +35,4 @@ A Streamlit dashboard for exploring synthetic spending insights, featuring polis
 - Chart styling lives in `ui/charts.py`; update there to keep visuals consistent.
 - Cached data loading follows Streamlit best practices via `@st.cache_data` to avoid redundant CSV reads.
 - UI tweaks such as card layout or navigation styles belong in `ui/components.py`.
+- AI-powered insights are generated via `lib/ai_summary.py`, with a runtime fallback to heuristic insights if the API is unavailable.

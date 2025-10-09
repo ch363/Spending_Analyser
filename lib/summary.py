@@ -23,6 +23,7 @@ class VendorRow(TypedDict):
     category: str
     label: str
     amount: float
+    share: float
 
 
 class MonthlySummary(TypedDict):
@@ -356,11 +357,12 @@ def _build_progress_rows(expenses: pd.DataFrame, total_spend: float) -> list[Pro
                 continue
             share = (amount / category_total) * 100
             width = int(np.clip(round((amount / category_total) * 100), 0, 100))
+            spend_label = f"£{amount:,.0f}"
             rows.append(
                 {
                     "category": str(category),
                     "label": str(merchant),
-                    "delta": f"{share:.0f}% of category",
+                    "delta": f"{share:.0f}% of category · {spend_label}",
                     "width": width,
                 }
             )
@@ -376,10 +378,14 @@ def _build_vendor_rows(expenses: pd.DataFrame) -> list[VendorRow]:
     if merchant_totals.empty:
         return []
 
-    merchant_totals = merchant_totals.sort_values("spend", ascending=False)
-    top_per_category = (
-        merchant_totals.groupby("category_label", group_keys=False).head(5)
+    merchant_totals["category_total"] = (
+        merchant_totals.groupby("category_label")["spend"].transform("sum")
     )
+    merchant_totals["share"] = merchant_totals["spend"] / merchant_totals["category_total"].replace(0, np.nan)
+    merchant_totals = merchant_totals.dropna(subset=["share"])
+
+    merchant_totals = merchant_totals.sort_values("spend", ascending=False)
+    top_per_category = merchant_totals.groupby("category_label", group_keys=False).head(5)
 
     vendor_rows: list[VendorRow] = []
     for record in top_per_category.to_dict(orient="records"):
@@ -388,6 +394,7 @@ def _build_vendor_rows(expenses: pd.DataFrame) -> list[VendorRow]:
                 "category": str(record["category_label"]),
                 "label": str(record["description"]),
                 "amount": float(record["spend"]),
+                "share": float(record["share"]),
             }
         )
 

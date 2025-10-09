@@ -274,20 +274,44 @@ def build_category_chart(category_df: pd.DataFrame):
     return fig
 
 
-def build_vendor_chart(vendor_df: pd.DataFrame) -> alt.Chart:
-    """Render a horizontal bar chart for vendor spend within a category."""
+def build_vendor_chart(vendor_df: pd.DataFrame):
+    """Render a horizontal bar chart for vendor spend within a category using Plotly."""
 
-    return (
-        alt.Chart(vendor_df)
-        .mark_bar(color="#0C6FFD", cornerRadiusTopLeft=4, cornerRadiusTopRight=4)
-        .encode(
-            x=alt.X("amount:Q", title="Spend (£)", axis=alt.Axis(labelColor="#6B7280")),
-            y=alt.Y("label:N", sort="-x", title="Merchant", axis=alt.Axis(labelColor="#6B7280")),
-            tooltip=[
-                alt.Tooltip("label:N", title="Merchant"),
-                alt.Tooltip("amount:Q", title="Spend", format="£,.0f"),
-            ],
-        )
-        .properties(height=220)
+    if vendor_df.empty:
+        empty = pd.DataFrame({"label": [], "amount": []})
+        fig = px.bar(empty, x="amount", y="label", orientation="h")
+        fig.update_layout(showlegend=False, margin=dict(l=0, r=0, t=0, b=0))
+        return fig
+
+    vendor_df = vendor_df.copy()
+    vendor_df["formatted_amount"] = vendor_df["amount"].map(lambda x: f"£{x:,.0f}")
+    vendor_df["formatted_share"] = vendor_df["share"].map(lambda x: f"{x:.1%}")
+
+    fig = px.bar(
+        vendor_df,
+        x="amount",
+        y="label",
+        orientation="h",
+        text="formatted_amount",
+        color_discrete_sequence=["#0C6FFD"],
     )
+
+    fig.update_traces(
+        hovertemplate=(
+            "%{y}<br>Spend: %{text}<br>% of category: %{customdata[0]}<extra></extra>"
+        ),
+        customdata=vendor_df[["formatted_share"]].to_numpy(),
+        textposition="outside",
+        cliponaxis=False,
+    )
+
+    fig.update_layout(
+        margin=dict(l=0, r=10, t=20, b=0),
+        xaxis=dict(title="Spend (£)", showgrid=False, zeroline=False),
+        yaxis=dict(title="Merchant", automargin=True),
+        bargap=0.35,
+        height=240,
+    )
+
+    return fig
 

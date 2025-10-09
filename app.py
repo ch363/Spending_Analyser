@@ -8,6 +8,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
+from lib.ai_summary import AISummaryError, generate_ai_summary
 from lib.summary import (
     DashboardData,
     MonthlySummary,
@@ -19,7 +20,6 @@ from ui.charts import (
     build_category_chart,
     build_cumulative_chart,
     build_spending_chart,
-    build_vendor_chart,
 )
 from ui.components import card, inject_css
 
@@ -83,32 +83,7 @@ def _render_category_card(category_df: pd.DataFrame) -> None:
     chart = build_category_chart(category_df)
     st.plotly_chart(chart, use_container_width=True, key="category-donut")
 
-    def _fmt_currency(value: float) -> str:
-        return f"£{value:,.0f}"
-
-    def _fmt_pct(value: float | None) -> str:
-        if value is None or pd.isna(value):
-            return "—"
-        return f"{value:+.1%}"
-
-    def _fmt_share(value: float | None) -> str:
-        if value is None or pd.isna(value):
-            return "—"
-        return f"{value:.1%}"
-
-    ranked = category_df.sort_values("CurrentValue", ascending=False).head(8).copy()
-    table = ranked.assign(
-        Current=ranked["CurrentValue"].map(_fmt_currency),
-        Previous=ranked["PreviousValue"].map(_fmt_currency),
-        **{
-            "Change (£)": ranked["ChangeAmount"].map(_fmt_currency),
-            "Change (%)": ranked["PctChange"].apply(_fmt_pct),
-            "Share": ranked["Share"].apply(_fmt_share),
-        },
-    )[
-        ["Category", "Current", "Previous", "Change (£)", "Change (%)", "Share"]
-    ]
-    st.dataframe(table, use_container_width=True, hide_index=True)
+    st.caption("Select a category to inspect details on the right.")
 
 
 def _render_details_card(
@@ -119,12 +94,35 @@ def _render_details_card(
     """Render detailed category progress trends and vendor breakdown."""
 
     categories = category_df["Category"].tolist()
+    if not categories:
+        st.info("No categories available yet.")
+        return
+
     selected_category = st.selectbox("Category", categories, index=0)
+
+    selected_row = category_df.loc[category_df["Category"] == selected_category]
+    if not selected_row.empty:
+        row = selected_row.iloc[0]
+        current_value = float(row["CurrentValue"])
+        previous_value = float(row["PreviousValue"])
+        change_amount = float(row["ChangeAmount"])
+        share_value = float(row["Share"])
+        pct_change = row["PctChange"]
+
+        delta_label = f"£{change_amount:,.0f}"
+        if pct_change is not None and not pd.isna(pct_change):
+            delta_label = f"£{change_amount:,.0f} ({pct_change:+.1%})"
+
+        summary_cols = st.columns((1.2, 1, 1))
+        summary_cols[0].metric("Spend this month", f"£{current_value:,.0f}", delta_label)
+        summary_cols[1].metric("Share of spend", f"{share_value:.1%}")
+        summary_cols[2].metric("Last month", f"£{previous_value:,.0f}")
 
     filtered_progress = [row for row in progress_rows if row["category"] == selected_category]
     filtered_vendors = [row for row in vendor_rows if row["category"] == selected_category]
 
     if filtered_progress:
+        st.caption("Top merchants this month")
         for row in filtered_progress:
             st.markdown(
                 f"<div class='ps-progress-row'><span>{row['label']}</span><span>{row['delta']}</span></div>",
@@ -135,12 +133,7 @@ def _render_details_card(
         st.info("No trend data for this category yet.")
 
     if filtered_vendors:
-        vendor_df = pd.DataFrame(filtered_vendors)
-        vendor_df = vendor_df.sort_values("amount", ascending=False)
-        vendor_chart = build_vendor_chart(vendor_df)
-        st.altair_chart(vendor_chart, use_container_width=True)
-    else:
-        st.warning("No merchant breakdown available.")
+        st.caption("Merchant breakdown data available as hover in donut chart.")
 
 
 def _render_insights_card(insights: list[str]) -> None:
@@ -153,7 +146,7 @@ def _render_insights_card(insights: list[str]) -> None:
     )
 
 
-def _render_dashboard(data: DashboardData) -> None:
+def _render_dashboard(data: DashboardData, ai_insights: list[str]) -> None:
     """Render the full PlainSpend dashboard layout."""
 
     summary = data["monthly_summary"]
@@ -185,8 +178,8 @@ def _render_dashboard(data: DashboardData) -> None:
                 data["vendor_rows"],
             )
 
-    with card("AI insights", suffix="Normal for you"):
-        _render_insights_card(data["insights"])
+    with card("AI insights", suffix="AI summary"):
+        _render_insights_card(ai_insights)
 
 
 @st.cache_data(show_spinner=False)
@@ -204,7 +197,34 @@ def main() -> None:
     st.title("Overview")
     st.caption("Synthetic spending insights for PlainSpend.")
     data = _load_dashboard_data()
-    _render_dashboard(data)
+
+    ai_insights = _resolve_ai_summary(data)
+    _render_dashboard(data, ai_insights)
+
+
+def _resolve_ai_summary(data: DashboardData) -> list[str]:
+    summary = data["monthly_summary"]
+    month_key = summary["month_label"]
+    cache_key = f"ai_summary::{month_key}"
+
+    if cache_key in st.session_state:
+        return st.session_state[cache_key]
+
+    fallback = data.get("insights", [])
+
+    with st.spinner("Generating AI summary…"):
+        try:
+            insights = generate_ai_summary(data)
+        except AISummaryError as exc:
+            st.info(f"AI summary unavailable: {exc}")
+            insights = fallback
+        except Exception:  # pragma: no cover - defensive
+            st.warning("AI summary failed. Showing basic insights instead.")
+            insights = fallback
+        else:
+            st.session_state[cache_key] = insights
+    st.session_state.setdefault(cache_key, insights)
+    return st.session_state[cache_key]
 
 
 if __name__ == "__main__":
