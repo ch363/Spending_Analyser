@@ -1,15 +1,19 @@
-"""Analytical helpers used by the PlainSpend summary service."""
+"""Dashboard aggregation helpers used by the summary service."""
 
 from __future__ import annotations
 
 from datetime import date
-from statistics import NormalDist
 from typing import Optional, Tuple
 
 import numpy as np
 import pandas as pd
 
-from core.models import DailyForecastPoint, ProjectionResult, ProgressRow, VendorRow
+from core.models import (
+    DailyForecastPoint,
+    ProgressRow,
+    ProjectionResult,
+    VendorRow,
+)
 
 __all__ = [
     "prepare_expenses",
@@ -26,6 +30,8 @@ __all__ = [
 
 
 def prepare_expenses(df: pd.DataFrame) -> pd.DataFrame:
+    """Return expense transactions enriched with spend values and labels."""
+
     expenses = df[df["category"].str.lower() != "income"].copy()
     expenses["category_label"] = expenses["category"].str.replace("_", " ").str.title()
     expenses["spend"] = np.where(expenses["amount"] < 0, -expenses["amount"], 0.0)
@@ -35,6 +41,8 @@ def prepare_expenses(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def resolve_target_period(expenses: pd.DataFrame, target_date: Optional[date]) -> pd.Period:
+    """Return the reporting month derived from expenses or an explicit target."""
+
     if target_date is not None:
         return pd.Period(target_date, freq="M")
     latest_date = expenses["date"].max()
@@ -42,6 +50,8 @@ def resolve_target_period(expenses: pd.DataFrame, target_date: Optional[date]) -
 
 
 def resolve_current_day(month_df: pd.DataFrame, month_end: pd.Timestamp) -> pd.Timestamp:
+    """Return the most recent observed transaction day within the month."""
+
     if month_df.empty:
         return month_end
     observed_max = month_df["date"].max().normalize()
@@ -53,6 +63,8 @@ def build_daily_spend(
     month_start: pd.Timestamp,
     current_day: pd.Timestamp,
 ) -> pd.Series:
+    """Construct a daily spend series between ``month_start`` and ``current_day``."""
+
     if current_day < month_start:
         return pd.Series(dtype=float)
 
@@ -71,30 +83,18 @@ def compute_projection(
     month_end: pd.Timestamp,
     confidence: float,
 ) -> ProjectionResult:
+    """Forecast cumulative spend for the remainder of the month."""
+
     total_to_date = float(daily_spend.sum())
     days_elapsed = int(len(daily_spend))
     daily_points: list[DailyForecastPoint] = []
 
     if current_day >= month_end:
-        return ProjectionResult(
-            total_to_date,
-            total_to_date,
-            total_to_date,
-            0,
-            days_elapsed,
-            daily_points,
-        )
+        return ProjectionResult(total_to_date, total_to_date, total_to_date, 0, days_elapsed, daily_points)
 
     future_days = pd.date_range(current_day + pd.Timedelta(days=1), month_end, freq="D")
     if future_days.empty:
-        return ProjectionResult(
-            total_to_date,
-            total_to_date,
-            total_to_date,
-            0,
-            days_elapsed,
-            daily_points,
-        )
+        return ProjectionResult(total_to_date, total_to_date, total_to_date, 0, days_elapsed, daily_points)
 
     weekday_frame = daily_spend.to_frame(name="spend")
     weekday_index = pd.Series(weekday_frame.index, index=weekday_frame.index)
@@ -124,20 +124,13 @@ def compute_projection(
 
         additional_mean += float(mu)
         variance += float(sigma) ** 2
-        daily_points.append(
-            DailyForecastPoint(date=day, mean=float(mu), std=float(sigma))
-        )
+        daily_points.append(DailyForecastPoint(date=day, mean=float(mu), std=float(sigma)))
 
     projected_total = total_to_date + additional_mean
     if variance <= 0:
-        return ProjectionResult(
-            projected_total,
-            projected_total,
-            projected_total,
-            len(future_days),
-            days_elapsed,
-            daily_points,
-        )
+        return ProjectionResult(projected_total, projected_total, projected_total, len(future_days), days_elapsed, daily_points)
+
+    from statistics import NormalDist
 
     z = NormalDist().inv_cdf((1 + confidence) / 2)
     std_future = float(np.sqrt(variance))
@@ -147,6 +140,8 @@ def compute_projection(
 
 
 def compute_category_total(expenses: pd.DataFrame, category_name: str) -> float:
+    """Return total spend for ``category_name`` within the supplied expenses."""
+
     mask = expenses["category"].str.lower() == category_name.lower()
     if not mask.any():
         return 0.0
@@ -158,6 +153,8 @@ def build_category_breakdown(
     current_expenses: pd.DataFrame,
     previous_expenses: pd.DataFrame,
 ) -> pd.DataFrame:
+    """Return a DataFrame describing top categories and their changes."""
+
     if current_expenses.empty:
         return pd.DataFrame(
             columns=[
@@ -171,9 +168,7 @@ def build_category_breakdown(
             ]
         )
 
-    current_totals = (
-        current_expenses.groupby("category_label")["spend"].sum().sort_values(ascending=False)
-    )
+    current_totals = current_expenses.groupby("category_label")["spend"].sum().sort_values(ascending=False)
     current_totals = current_totals[current_totals > 0]
 
     previous_totals = previous_expenses.groupby("category_label")["spend"].sum()
@@ -181,9 +176,7 @@ def build_category_breakdown(
     top_categories = current_totals.head(8)
     total_value = float(current_totals.sum()) if not current_totals.empty else 0.0
 
-    breakdown = top_categories.reset_index().rename(
-        columns={"category_label": "Category", "spend": "CurrentValue"}
-    )
+    breakdown = top_categories.reset_index().rename(columns={"category_label": "Category", "spend": "CurrentValue"})
     breakdown["PreviousValue"] = breakdown["Category"].map(previous_totals).fillna(0.0)
 
     current_values = breakdown["CurrentValue"].astype(float)
@@ -203,6 +196,8 @@ def build_category_breakdown(
 
 
 def build_progress_rows(expenses: pd.DataFrame, total_spend: float) -> list[ProgressRow]:
+    """Return summary rows describing top merchants within each category."""
+
     rows: list[ProgressRow] = []
     if total_spend <= 0:
         return rows
@@ -212,9 +207,7 @@ def build_progress_rows(expenses: pd.DataFrame, total_spend: float) -> list[Prog
         if category_total <= 0:
             continue
 
-        merchant_totals = (
-            category_df.groupby("description")["spend"].sum().sort_values(ascending=False)
-        )
+        merchant_totals = category_df.groupby("description")["spend"].sum().sort_values(ascending=False)
 
         for merchant, amount in merchant_totals.head(3).items():
             if amount <= 0:
@@ -235,16 +228,14 @@ def build_progress_rows(expenses: pd.DataFrame, total_spend: float) -> list[Prog
 
 
 def build_vendor_rows(expenses: pd.DataFrame) -> list[VendorRow]:
-    merchant_totals = (
-        expenses.groupby(["category_label", "description"])["spend"].sum().reset_index()
-    )
+    """Return per-category top vendor rows including spend share."""
+
+    merchant_totals = expenses.groupby(["category_label", "description"])["spend"].sum().reset_index()
     merchant_totals = merchant_totals[merchant_totals["spend"] > 0]
     if merchant_totals.empty:
         return []
 
-    merchant_totals["category_total"] = (
-        merchant_totals.groupby("category_label")["spend"].transform("sum")
-    )
+    merchant_totals["category_total"] = merchant_totals.groupby("category_label")["spend"].transform("sum")
     merchant_totals["share"] = merchant_totals["spend"] / merchant_totals["category_total"].replace(0, np.nan)
     merchant_totals = merchant_totals.dropna(subset=["share"])
 
@@ -266,8 +257,11 @@ def build_vendor_rows(expenses: pd.DataFrame) -> list[VendorRow]:
 
 
 def build_daily_and_cumulative_frames(
-    daily_spend: pd.Series, projection: ProjectionResult
+    daily_spend: pd.Series,
+    projection: ProjectionResult,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Return data frames for daily spend and cumulative projections."""
+
     daily_records: list[dict[str, object]] = []
     cumulative_records: list[dict[str, object]] = []
 
@@ -277,41 +271,23 @@ def build_daily_and_cumulative_frames(
 
     cumulative_actual = daily_spend.cumsum()
     for day, value in cumulative_actual.items():
-        cumulative_records.append(
-            {"Day": day, "Total": float(value), "Series": "Actual"}
-        )
+        cumulative_records.append({"Day": day, "Total": float(value), "Series": "Actual"})
 
     if projection.daily_forecast:
         if not daily_spend.empty:
             anchor_day = daily_spend.index[-1]
             anchor_daily = float(daily_spend.iloc[-1])
-            daily_records.append(
-                {"Day": anchor_day, "Spend": anchor_daily, "Series": "Projected"}
-            )
+            daily_records.append({"Day": anchor_day, "Spend": anchor_daily, "Series": "Projected"})
             anchor_total = float(cumulative_actual.iloc[-1])
-            cumulative_records.append(
-                {"Day": anchor_day, "Total": anchor_total, "Series": "Projected"}
-            )
+            cumulative_records.append({"Day": anchor_day, "Total": anchor_total, "Series": "Projected"})
         else:
             anchor_total = 0.0
 
         running_total = anchor_total
         for point in projection.daily_forecast:
-            daily_records.append(
-                {
-                    "Day": point.date,
-                    "Spend": float(point.mean),
-                    "Series": "Projected",
-                }
-            )
+            daily_records.append({"Day": point.date, "Spend": float(point.mean), "Series": "Projected"})
             running_total += float(point.mean)
-            cumulative_records.append(
-                {
-                    "Day": point.date,
-                    "Total": running_total,
-                    "Series": "Projected",
-                }
-            )
+            cumulative_records.append({"Day": point.date, "Total": running_total, "Series": "Projected"})
 
     daily_df = pd.DataFrame(daily_records)
     if not daily_df.empty:

@@ -5,12 +5,12 @@ A Streamlit dashboard for exploring synthetic spending insights, featuring polis
 ## Project structure
 
 - `app/main.py` — Streamlit entrypoint orchestrating layout and data loading.
+- `analytics/` — Merchant normalisation, recurring detection, and projection helpers.
 - `core/summary_service.py` — Core data aggregation pipeline for dashboard metrics.
 - `core/summary.py` — High-level summary APIs including AI insights helpers.
-- `core/analytics.py` — Analytical helpers for spend trends and projections.
 - `core/data_loader.py` — Cached CSV reader powering the analytics stack.
 - `core/models.py` — Typed data structures shared across the dashboard.
-- `lib/` — Data preparation utilities and forecasting helpers.
+- `lib/` — Synthetic data generation utilities for seeding the app.
 - `ui/components.py` — Reusable UI building blocks (cards, global styles).
 - `ui/charts.py` — Centralised Plotly chart builders for consistency across the app.
 - `data/seed.csv` — Seed dataset used to power the dashboard.

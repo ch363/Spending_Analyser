@@ -8,7 +8,9 @@ from typing import Optional
 
 import pandas as pd
 
-from core.analytics import (
+from analytics.forecast import compute_cashflow_runway
+from analytics.recurring import detect_duplicate_transactions, detect_recurring_transactions
+from analytics.summary import (
     build_category_breakdown,
     build_daily_and_cumulative_frames,
     build_daily_spend,
@@ -23,8 +25,6 @@ from core.analytics import (
 from core.data_loader import load_transactions
 from core.formatting import build_insights, format_delta
 from core.models import DashboardData, MonthlySummary
-from lib.forecast import compute_cashflow_runway
-from lib.recurring import detect_duplicate_transactions, detect_recurring_transactions
 
 __all__ = ["prepare_dashboard_data"]
 
