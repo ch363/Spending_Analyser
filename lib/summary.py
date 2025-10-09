@@ -11,6 +11,14 @@ from typing import Optional, Tuple, TypedDict
 import numpy as np
 import pandas as pd
 
+from .forecast import CashflowRunway, compute_cashflow_runway
+from .recurring import (
+    DuplicateEntry,
+    RecurringEntry,
+    detect_duplicate_transactions,
+    detect_recurring_transactions,
+)
+
 
 class ProgressRow(TypedDict):
     category: str
@@ -49,6 +57,9 @@ class DashboardData(TypedDict):
     vendor_rows: list[VendorRow]
     insights: list[str]
     monthly_summary: MonthlySummary
+    recurring_entries: list[RecurringEntry]
+    duplicate_entries: list[DuplicateEntry]
+    cashflow_runway: CashflowRunway
 
 
 @dataclass(frozen=True)
@@ -124,6 +135,20 @@ def prepare_dashboard_data(
         top_vendor=vendor_rows[0] if vendor_rows else None,
     )
 
+    recurring_entries = detect_recurring_transactions(expenses, current_day)
+    duplicate_entries = detect_duplicate_transactions(current_month_expenses)
+
+    incomes = df[df["category"].str.lower() == "income"].copy()
+    cashflow_runway = compute_cashflow_runway(
+        expenses=expenses,
+        incomes=incomes,
+        today=current_day,
+        total_spend_to_date=total_spend,
+        projected_total=projection.projected_total,
+        days_remaining=projection.days_remaining,
+        recurring_entries=recurring_entries,
+    )
+
     month_label = target_period.strftime("%B %Y")
 
     summary: MonthlySummary = {
@@ -149,6 +174,9 @@ def prepare_dashboard_data(
         "vendor_rows": vendor_rows,
         "insights": insights,
         "monthly_summary": summary,
+        "recurring_entries": recurring_entries,
+        "duplicate_entries": duplicate_entries,
+        "cashflow_runway": cashflow_runway,
     }
 
 

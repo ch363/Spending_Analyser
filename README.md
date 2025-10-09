@@ -33,7 +33,7 @@ A Streamlit dashboard for exploring synthetic spending insights, featuring polis
 ## Pages
 
 - **Overview** — The main dashboard with monthly metrics, charts, and AI highlights.
-- **Insights** — A scaffolded deep-dive view that reuses AI highlights, surfaces top category movers, and maps upcoming enhancements. Access it via the navigation bar at the top of the app.
+- **Insights** — An AI-guided deep dive featuring the cash-flow runway gauge, recurring subscription watchlist, duplicate charge alerts, and top category movers. Access it from the navigation bar at the top of the app.
 
 ## Development tips
 
@@ -41,3 +41,9 @@ A Streamlit dashboard for exploring synthetic spending insights, featuring polis
 - Cached data loading follows Streamlit best practices via `@st.cache_data` to avoid redundant CSV reads.
 - UI tweaks such as card layout or navigation styles belong in `ui/components.py`.
 - AI-powered insights are generated via `lib/ai_summary.py`, with a runtime fallback to heuristic insights if the API is unavailable.
+
+## Advanced analytics
+
+- `lib/categorize.py` normalises merchant descriptions so that subscriptions and duplicates can be grouped reliably.
+- `lib/recurring.py` detects recurring transactions (weekly, bi-weekly, monthly) and surfaces potential duplicate charges.
+- `lib/forecast.py` estimates cash-flow runway using recent pay cycles, upcoming commitments, and projected spend.
