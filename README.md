@@ -4,11 +4,12 @@ A Streamlit dashboard for exploring synthetic spending insights, featuring polis
 
 ## Project structure
 
-- `app.py` — Streamlit entrypoint orchestrating layout and data loading.
+- `app/main.py` — Streamlit entrypoint orchestrating layout and data loading.
 - `lib/` — Data preparation utilities and forecasting helpers.
 - `ui/components.py` — Reusable UI building blocks (cards, global styles).
 - `ui/charts.py` — Centralised Plotly chart builders for consistency across the app.
 - `data/seed.csv` — Seed dataset used to power the dashboard.
+- `tests/` — Pytest suite scaffold with smoke checks for the app package.
 
 ## Getting started
 
@@ -27,8 +28,16 @@ A Streamlit dashboard for exploring synthetic spending insights, featuring polis
 3. Launch the dashboard:
 
    ```bash
-   streamlit run app.py
+   streamlit run app/main.py
    ```
+
+### Running tests
+
+Install development dependencies (for example, `pip install pytest`) and run:
+
+```bash
+pytest
+```
 
 ## Pages
 

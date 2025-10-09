@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "plainspend"
+version = "0.1.0"
+description = "Streamlit dashboard for synthetic spending insights."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "PlainSpend Contributors" }
+]
+dependencies = [
+    "plotly>=5.24.0",
+    "pandas>=2.0.0",
+    "streamlit>=1.50.0",
+    "openai>=1.35.3"
+]
+
+[project.urls]
+Homepage = "https://github.com/ch363/Spending_Analyser"
+
+[tool.setuptools]
+packages = ["app", "lib", "ui"]
+
+[tool.setuptools.package-dir]
+app = "app"
+lib = "lib"
+ui = "ui"

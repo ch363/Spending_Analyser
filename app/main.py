@@ -33,7 +33,8 @@ st.set_page_config(
 )
 
 
-DATA_PATH = Path("data/seed.csv")
+BASE_DIR = Path(__file__).resolve().parent.parent
+DATA_PATH = BASE_DIR / "data" / "seed.csv"
 
 NAV_LINKS: list[tuple[str, str, bool]] = [
     ("overview", "Dashboard", True),
@@ -112,6 +113,7 @@ def _render_navbar(active_page: str, month_key: str | None) -> None:
         """,
         unsafe_allow_html=True,
     )
+
 
 def _render_sidebar_filters(
     month_options: list[str],
