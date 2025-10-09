@@ -23,6 +23,28 @@ def inject_css() -> None:
             background: #F4F6FB;
           }
 
+          .ps-sidebar-links {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            margin-top: 0.75rem;
+          }
+
+          .ps-sidebar-link,
+          .ps-sidebar-link:visited {
+            color: #2563eb;
+            text-decoration: none;
+            font-weight: 600;
+          }
+
+          .ps-sidebar-link.is-active {
+            color: #1d4ed8;
+          }
+
+          .ps-sidebar-link:hover {
+            text-decoration: underline;
+          }
+
           .block-container {
             max-width: 1200px;
             padding-top: 2.5rem;

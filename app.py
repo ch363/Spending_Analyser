@@ -43,6 +43,21 @@ NAV_LINKS: list[tuple[str, str, bool]] = [
 ]
 
 
+def _sidebar_link(
+    label: str,
+    page: str,
+    active_page: str,
+    month_key: str | None,
+) -> str:
+    is_active = page == active_page
+    css_classes = "ps-sidebar-link" + (" is-active" if is_active else "")
+    aria_current = ' aria-current="page"' if is_active else ""
+    href = f"?page={page}"
+    if month_key:
+        href += f"&month={month_key}"
+    return f"<a href='{href}' class='{css_classes}'{aria_current}>{label}</a>"
+
+
 def _get_active_page() -> str:
     """Determine the active page from the URL query params or session state."""
 
@@ -67,7 +82,7 @@ def _get_active_page() -> str:
     return page
 
 
-def _render_navbar(active_page: str) -> None:
+def _render_navbar(active_page: str, month_key: str | None) -> None:
     """Render the dashboard navigation bar with active state."""
 
     link_markup: list[str] = []
@@ -80,6 +95,8 @@ def _render_navbar(active_page: str) -> None:
 
         if is_enabled:
             href = f"?page={slug}"
+            if month_key:
+                href += f"&month={month_key}"
             link_markup.append(
                 f'<a class="{css_class}" href="{href}"{aria_current} data-page="{slug}">{label}</a>'
             )
@@ -95,6 +112,66 @@ def _render_navbar(active_page: str) -> None:
         """,
         unsafe_allow_html=True,
     )
+
+def _render_sidebar_filters(
+    month_options: list[str],
+    active_page: str,
+    selected_month: str | None,
+) -> str | None:
+    if not month_options:
+        st.sidebar.info("No transactions available yet.")
+        st.session_state.pop("month_selector", None)
+        return None
+
+    candidate = selected_month if selected_month in month_options else None
+    if candidate is None:
+        stored = st.session_state.get("month_selector")
+        if stored in month_options:
+            candidate = stored
+    if candidate is None:
+        candidate = month_options[-1]
+
+    try:
+        default_index = month_options.index(candidate)
+    except ValueError:
+        default_index = len(month_options) - 1
+
+    with st.sidebar:
+        st.markdown("### Filters")
+        chosen_month = st.selectbox(
+            "Month",
+            month_options,
+            index=max(default_index, 0),
+            key="month_selector",
+            format_func=lambda key: pd.Period(key, freq="M").strftime("%B %Y"),
+        )
+
+        active_month = chosen_month
+
+        st.markdown("---")
+        st.markdown("### More")
+        st.markdown(
+            "<div class='ps-sidebar-links'>"
+            f"{_sidebar_link('Help', 'help', active_page, active_month)}"
+            f"{_sidebar_link('Settings', 'settings', active_page, active_month)}"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+
+    return chosen_month
+
+
+def _sync_month_query_param(month_key: str | None) -> None:
+    current_param = st.query_params.get("month")
+    if isinstance(current_param, list):
+        current_param = current_param[0] if current_param else None
+
+    if month_key:
+        if current_param != month_key:
+            st.query_params["month"] = month_key
+    else:
+        if "month" in st.query_params:
+            st.query_params.pop("month")
 
 
 def _render_this_month_card(summary: MonthlySummary) -> None:
@@ -444,10 +521,35 @@ def _render_insights_page(data: DashboardData, ai_insights: list[str]) -> None:
 
 
 @st.cache_data(show_spinner=False)
-def _load_dashboard_data() -> DashboardData:
-    """Load and cache dashboard data from the CSV seed file."""
+def _load_month_options() -> list[str]:
+    """Return sorted month keys (YYYY-MM) available in the transaction CSV."""
 
-    return prepare_dashboard_data(DATA_PATH)
+    try:
+        df = pd.read_csv(DATA_PATH, parse_dates=["date"])
+    except FileNotFoundError:
+        return []
+
+    if df.empty or "date" not in df.columns:
+        return []
+
+    periods = (
+        df["date"].dropna().dt.to_period("M").drop_duplicates().sort_values()
+    )
+    return [str(period) for period in periods]
+
+
+@st.cache_data(show_spinner=False)
+def _load_dashboard_data(month_key: str | None = None) -> DashboardData:
+    """Load and cache dashboard data for a given month key from the CSV seed file."""
+
+    target_date = None
+    if month_key:
+        try:
+            target_date = pd.Period(month_key, freq="M").to_timestamp(how="start")
+        except (ValueError, TypeError):
+            target_date = None
+
+    return prepare_dashboard_data(DATA_PATH, target_date=target_date)
 
 
 def main() -> None:
@@ -455,9 +557,26 @@ def main() -> None:
 
     inject_css()
     active_page = _get_active_page()
-    _render_navbar(active_page)
+    month_options = _load_month_options()
+    default_month = month_options[-1] if month_options else None
 
-    data = _load_dashboard_data()
+    raw_month = st.query_params.get("month")
+    if isinstance(raw_month, list):
+        raw_month = raw_month[0] if raw_month else None
+
+    session_month = st.session_state.get("month_selector")
+    selected_month = None
+    for candidate in (session_month, raw_month, default_month):
+        if candidate and candidate in month_options:
+            selected_month = candidate
+            break
+
+    _render_navbar(active_page, selected_month)
+
+    selected_month = _render_sidebar_filters(month_options, active_page, selected_month)
+    _sync_month_query_param(selected_month)
+
+    data = _load_dashboard_data(selected_month)
     insight_mode = "insights" if active_page == "insights" else "overview"
     ai_insights = _resolve_ai_summary(data, mode=insight_mode)
 
