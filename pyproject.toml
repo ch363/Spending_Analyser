@@ -16,18 +16,21 @@ dependencies = [
     "plotly>=5.24.0",
     "pandas>=2.0.0",
     "streamlit>=1.50.0",
-    "openai>=1.35.3"
+    "openai>=1.35.3",
+    "pydantic>=2.6.4",
+    "pydantic-settings>=2.2.1"
 ]
 
 [project.urls]
 Homepage = "https://github.com/ch363/Spending_Analyser"
 
 [tool.setuptools]
-packages = ["analytics", "app", "core", "lib", "visualization"]
+packages = ["analytics", "app", "config", "core", "lib", "visualization"]
 
 [tool.setuptools.package-dir]
 analytics = "analytics"
 app = "app"
+config = "config"
 core = "core"
 lib = "lib"
 visualization = "visualization"
