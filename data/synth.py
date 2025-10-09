@@ -10,9 +10,10 @@ from __future__ import annotations
 
 import calendar
 import itertools
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
-from typing import List, Optional, Sequence, Tuple, TypeVar
+from typing import Callable, List, Optional, Sequence, Tuple, TypeVar
 
 import numpy as np
 import pandas as pd
@@ -193,6 +194,141 @@ TRANSPORT_MERCHANTS: Sequence[MerchantProfile] = (
     ),
 )
 
+DINING_MERCHANTS: Sequence[MerchantProfile] = (
+    MerchantProfile(
+        description="PRET A MANGER CITY",
+        mcc="5814",
+        category="eating_out",
+        channel="card_present",
+        city="London",
+        country="GBR",
+        default_note="Lunch on the go",
+    ),
+    MerchantProfile(
+        description="DELIVEROO ORDER",
+        mcc="5814",
+        category="eating_out",
+        channel="online",
+        city="London",
+        country="GBR",
+        default_note="Takeaway dinner",
+    ),
+    MerchantProfile(
+        description="NANDOS UK",
+        mcc="5812",
+        category="eating_out",
+        channel="card_present",
+        city="Manchester",
+        country="GBR",
+        default_note="Meal out",
+    ),
+    MerchantProfile(
+        description="ITSU LIVERPOOL STREET",
+        mcc="5814",
+        category="eating_out",
+        channel="card_present",
+        city="London",
+        country="GBR",
+        default_note="Sushi lunch",
+    ),
+)
+
+COFFEE_MERCHANTS: Sequence[MerchantProfile] = (
+    MerchantProfile(
+        description="STARBUCKS UK",
+        mcc="5814",
+        category="coffee",
+        channel="card_present",
+        city="London",
+        country="GBR",
+    ),
+    MerchantProfile(
+        description="COSTA COFFEE",
+        mcc="5814",
+        category="coffee",
+        channel="card_present",
+        city="Birmingham",
+        country="GBR",
+    ),
+    MerchantProfile(
+        description="GAILS BAKERY",
+        mcc="5814",
+        category="coffee",
+        channel="card_present",
+        city="London",
+        country="GBR",
+    ),
+)
+
+SHOPPING_MERCHANTS: Sequence[MerchantProfile] = (
+    MerchantProfile(
+        description="AMAZON UK MARKETPLACE",
+        mcc="5942",
+        category="shopping",
+        channel="online",
+        city="London",
+        country="GBR",
+        default_note="Online order",
+    ),
+    MerchantProfile(
+        description="ARGOS ONLINE",
+        mcc="5732",
+        category="shopping",
+        channel="online",
+        city="Milton Keynes",
+        country="GBR",
+        default_note="Household purchase",
+    ),
+    MerchantProfile(
+        description="IKEA WEMBLEY",
+        mcc="5712",
+        category="shopping",
+        channel="card_present",
+        city="London",
+        country="GBR",
+        default_note="Homeware",
+    ),
+    MerchantProfile(
+        description="UNIQLO REGENT STREET",
+        mcc="5651",
+        category="shopping",
+        channel="card_present",
+        city="London",
+        country="GBR",
+        default_note="Clothing",
+    ),
+)
+
+PERSONAL_CARE_MERCHANTS: Sequence[MerchantProfile] = (
+    MerchantProfile(
+        description="BOOTS UK 1234",
+        mcc="5912",
+        category="personal_care",
+        channel="card_present",
+        city="London",
+        country="GBR",
+        default_note="Pharmacy",
+    ),
+    MerchantProfile(
+        description="SUPERDRUG HIGH ST",
+        mcc="5977",
+        category="personal_care",
+        channel="card_present",
+        city="Leeds",
+        country="GBR",
+        default_note="Toiletries",
+    ),
+    MerchantProfile(
+        description="HOLLAND & BARRETT",
+        mcc="5499",
+        category="personal_care",
+        channel="card_present",
+        city="Manchester",
+        country="GBR",
+        default_note="Wellness",
+    ),
+)
+
 SUBSCRIPTION_MERCHANTS: Sequence[Tuple[MerchantProfile, float]] = (
     (
         MerchantProfile(
@@ -327,7 +463,7 @@ def generate_synthetic_transactions(
     if period_start > period_end:
         return pd.DataFrame(columns=FIELDS)
 
-    all_days = pd.date_range(start=period_start, end=period_end, freq="D")
+    all_days = [d.date() for d in pd.date_range(start=period_start, end=period_end, freq="D")]
     week_keys = sorted({(d.isocalendar().year, d.isocalendar().week) for d in all_days})
     num_event_weeks = min(max(1, len(month_starts) // 2), len(week_keys)) if week_keys else 0
     event_weeks = set()
@@ -337,6 +473,21 @@ def generate_synthetic_transactions(
 
     records: List[dict] = []
     txn_counter = itertools.count(1)
+
+    scheduled_by_day: defaultdict[date, List[tuple[float, MerchantProfile, Optional[str], bool, Optional[str]]]] = defaultdict(list)
+
+    def schedule_transaction(
+        txn_date: date,
+        amount: float,
+        merchant: MerchantProfile,
+        *,
+        note: Optional[str] = None,
+        is_refund: bool = False,
+        card_last4: Optional[str] = None,
+    ) -> None:
+        if txn_date < period_start or txn_date > period_end:
+            return
+        scheduled_by_day[txn_date].append((amount, merchant, note, bool(is_refund), card_last4))
 
     def append_record(
         txn_date: date,
@@ -373,6 +524,89 @@ def generate_synthetic_transactions(
             }
         )
 
+    def sample_daily_transaction(day: date) -> Tuple[MerchantProfile, float, Optional[str]]:
+        is_weekend = day.weekday() >= 5
+        is_event_week = _week_key(day) in event_weeks
+
+        option_specs = [
+            {
+                "merchants": GROCERY_MERCHANTS,
+                "base_weight": 0.27,
+                "weekend_weight": 1.15,
+                "event_weight": 1.2,
+                "sampler": lambda r, weekend, event: -abs(
+                    r.normal(42 if weekend else 36, 11) * (1.15 if event else 1.0)
+                ),
+                "note": "Groceries",
+            },
+            {
+                "merchants": TRANSPORT_MERCHANTS,
+                "base_weight": 0.23,
+                "weekend_weight": 0.55,
+                "event_weight": 1.0,
+                "sampler": lambda r, weekend, event: -abs(
+                    r.uniform(2.8, 18.5) * (0.8 if weekend else 1.0)
+                ),
+                "note": "Travel",
+            },
+            {
+                "merchants": DINING_MERCHANTS,
+                "base_weight": 0.18,
+                "weekend_weight": 1.45,
+                "event_weight": 1.2,
+                "sampler": lambda r, weekend, event: -abs(
+                    r.normal(28 if weekend else 20, 8) * (1.2 if event else 1.0)
+                ),
+                "note": "Eating out",
+            },
+            {
+                "merchants": COFFEE_MERCHANTS,
+                "base_weight": 0.11,
+                "weekend_weight": 1.1,
+                "event_weight": 1.0,
+                "sampler": lambda r, weekend, event: -abs(r.normal(6.2 if weekend else 5.1, 1.8)),
+                "note": "Coffee break",
+            },
+            {
+                "merchants": SHOPPING_MERCHANTS,
+                "base_weight": 0.13,
+                "weekend_weight": 1.35,
+                "event_weight": 1.35,
+                "sampler": lambda r, weekend, event: -abs(
+                    r.normal(68 if weekend else 48, 26) * (1.2 if event else 1.0)
+                ),
+                "note": "Shopping",
+            },
+            {
+                "merchants": PERSONAL_CARE_MERCHANTS,
+                "base_weight": 0.08,
+                "weekend_weight": 1.0,
+                "event_weight": 1.0,
+                "sampler": lambda r, weekend, event: -abs(r.normal(22 if weekend else 18, 6)),
+                "note": "Personal care",
+            },
+        ]
+
+        weights = []
+        for spec in option_specs:
+            weight = spec["base_weight"]
+            if is_weekend:
+                weight *= spec["weekend_weight"]
+            if is_event_week:
+                weight *= spec["event_weight"]
+            weights.append(weight)
+
+        weights_array = np.asarray(weights, dtype=float)
+        if weights_array.sum() <= 0:
+            weights_array = np.ones(len(option_specs), dtype=float)
+        weights_array /= weights_array.sum()
+
+        choice_idx = int(rng.choice(len(option_specs), p=weights_array))
+        chosen = option_specs[choice_idx]
+        merchant = _rng_choice(chosen["merchants"], rng)
+        amount = chosen["sampler"](rng, is_weekend, is_event_week)
+        return merchant, amount, chosen["note"]
+
     for month_anchor in month_starts:
         year, month = month_anchor.year, month_anchor.month
 
@@ -383,19 +617,19 @@ def generate_synthetic_transactions(
             base_income = rng.normal(2650, 140)
             bonus = rng.normal(420, 70) if payday_day == 15 and rng.random() < 0.22 else 0
             amount = abs(base_income + bonus)
-            append_record(payday_date, amount, employer, card_last4="0000")
+            schedule_transaction(payday_date, amount, employer, card_last4="0000")
 
         # Rent at first weekday of the month
         rent_date = _first_weekday(year, month)
         rent_amount = -abs(rng.normal(1780, 60))
-        append_record(rent_date, rent_amount, RENT_MERCHANT)
+        schedule_transaction(rent_date, rent_amount, RENT_MERCHANT)
 
         # Utilities
         utility_days = (6, 12, 20)
         for (merchant, base_amount, drift_pct), utility_day in zip(UTILITY_MERCHANTS, utility_days):
             utility_date = _clamp_day(year, month, utility_day)
             amount = base_amount * (1 + rng.normal(0, drift_pct))
-            append_record(utility_date, amount, merchant)
+            schedule_transaction(utility_date, amount, merchant)
 
         # Subscriptions
         subscription_day = 8
@@ -403,42 +637,32 @@ def generate_synthetic_transactions(
             offset = int(rng.integers(-2, 3))
             sub_date = _clamp_day(year, month, subscription_day + offset)
             drift = base_amount * rng.normal(0, 0.015)
-            append_record(sub_date, base_amount + drift, merchant)
+            schedule_transaction(sub_date, base_amount + drift, merchant)
 
-        month_dates_full = _month_date_range(year, month)
-        month_dates = [d for d in month_dates_full if period_start <= d <= period_end]
-        if not month_dates:
-            continue
-
-        # Groceries with event week variation
-        grocery_count = int(rng.integers(6, 9))
-        for _ in range(grocery_count):
-            txn_date = _rng_choice(month_dates, rng)
-            week_key = _week_key(txn_date)
-            multiplier = 1.35 if week_key in event_weeks else 1.0
-            amount = -abs(rng.normal(62, 18) * multiplier)
-            merchant = _rng_choice(GROCERY_MERCHANTS, rng)
-            append_record(txn_date, amount, merchant, note="Groceries")
-
-        # Transport
-        transport_count = int(rng.integers(10, 18))
-        for _ in range(transport_count):
-            txn_date = _rng_choice(month_dates, rng)
-            week_key = _week_key(txn_date)
-            multiplier = 1.4 if week_key in event_weeks else 1.0
-            amount = -abs(rng.uniform(2.8, 28.0) * multiplier)
-            merchant = _rng_choice(TRANSPORT_MERCHANTS, rng)
-            note = "Commute" if merchant.description.startswith("TFL") else "Travel"
-            append_record(txn_date, amount, merchant, note=note)
-
-        # Event week spending
+        # Event week spending (larger discretionary purchases)
         for week_key in sorted(event_weeks):
             if _is_week_in_month(week_key, year, month):
                 week_start = _week_start_date(week_key)
                 event_date = week_start + timedelta(days=int(rng.integers(0, 7)))
                 merchant, amount_bounds = _rng_choice(EVENT_MERCHANTS, rng)
                 amount = rng.uniform(*amount_bounds)
-                append_record(event_date, amount, merchant, note="Event week treat")
+                schedule_transaction(event_date, amount, merchant, note="Event week treat")
+
+    for day in all_days:
+        day_entries = list(scheduled_by_day.get(day, []))
+
+        target_transactions = int(rng.integers(6, 9))
+        discretionary_needed = max(0, target_transactions - len(day_entries))
+
+        for _ in range(discretionary_needed):
+            merchant, amount, note = sample_daily_transaction(day)
+            day_entries.append((amount, merchant, note, False, None))
+
+        if day_entries:
+            permutation = rng.permutation(len(day_entries))
+            for idx in permutation:
+                amount, merchant, note, is_refund, card_last4 = day_entries[int(idx)]
+                append_record(day, amount, merchant, note=note, is_refund=is_refund, card_last4=card_last4)
 
     _inject_refunds(records, rng)
     _inject_duplicates(records, rng)
@@ -530,7 +754,7 @@ def _rng_choice(options: Sequence[T], rng: np.random.Generator) -> T:
     return options[idx]
 
 
-def _inject_duplicates(records: List[dict], rng: np.random.Generator, fraction: float = 0.02) -> None:
+def _inject_duplicates(records: List[dict], rng: np.random.Generator, fraction: float = 0.01) -> None:
     if not records:
         return
     dup_count = max(1, int(len(records) * fraction))
@@ -544,10 +768,43 @@ def _inject_duplicates(records: List[dict], rng: np.random.Generator, fraction: 
         records.append(duplicate)
 
 
-def _inject_refunds(records: List[dict], rng: np.random.Generator, probability: float = 0.02) -> None:
+def _inject_refunds(
+    records: List[dict],
+    rng: np.random.Generator,
+    probability: float = 0.02,
+    max_refund_amount: float = 250.0,
+    allowed_categories: Optional[Sequence[str]] = None,
+) -> None:
+    if allowed_categories is None:
+        allowed_categories = (
+            "groceries",
+            "eating_out",
+            "coffee",
+            "shopping",
+            "transport",
+            "personal_care",
+            "entertainment",
+        )
+
+    allowed_set = {category.lower() for category in allowed_categories}
+
     for record in records:
-        if record["amount"] < 0 and rng.random() < probability:
-            record["amount"] = abs(record["amount"])
-            record["is_refund"] = True
-            note = (record.get("note") or "").strip()
-            record["note"] = (note + " | refund").strip()
+        amount = float(record.get("amount", 0))
+        category = str(record.get("category", "")).lower()
+
+        if amount >= 0:
+            continue
+
+        if category not in allowed_set:
+            continue
+
+        if abs(amount) > max_refund_amount:
+            continue
+
+        if rng.random() >= probability:
+            continue
+
+        record["amount"] = abs(amount)
+        record["is_refund"] = True
+        note = (record.get("note") or "").strip()
+        record["note"] = (note + " | refund").strip()

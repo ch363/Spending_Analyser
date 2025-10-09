@@ -36,6 +36,15 @@ A Streamlit dashboard for exploring synthetic spending insights, featuring polis
    ```bash
    streamlit run app/main.py
    ```
+### Synthetic data
+The app uses a synthetic dataset generated from `data/synth.py`. You can modify parameters like date range, income, and spending patterns by editing the script and re-running it to produce a new `data/seed.csv`.
+Update the `data/seed.csv` file by running:
+
+```bash
+python3 data/synth.py
+
+./.venv/bin/python3 data/synth.py
+```
 
 ### Running tests
 
