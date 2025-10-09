@@ -1,13 +1,13 @@
 # PlainSpend Dashboard
 
-A Streamlit dashboard for exploring synthetic spending insights, featuring polished card-based layouts and Altair visualisations.
+A Streamlit dashboard for exploring synthetic spending insights, featuring polished card-based layouts and interactive Plotly visualisations.
 
 ## Project structure
 
 - `app.py` — Streamlit entrypoint orchestrating layout and data loading.
 - `lib/` — Data preparation utilities and forecasting helpers.
 - `ui/components.py` — Reusable UI building blocks (cards, global styles).
-- `ui/charts.py` — Centralised Altair chart builders for consistency across the app.
+- `ui/charts.py` — Centralised Plotly chart builders for consistency across the app.
 - `data/seed.csv` — Seed dataset used to power the dashboard.
 
 ## Getting started

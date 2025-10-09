@@ -347,13 +347,13 @@ def _render_dashboard(data: DashboardData, ai_insights: list[str]) -> None:
     with row_one_right:
         with card("This months daily spend", suffix="Normal for you"):
             chart = build_spending_chart(data["daily_spend_df"])
-            st.altair_chart(chart, use_container_width=True)
+            st.plotly_chart(chart, use_container_width=True)
 
     cumulative_df = data["cumulative_spend_df"]
     if summary["days_remaining"] > 0 and not cumulative_df.empty:
         with card("Cumulative projection", suffix="Forecast"):
             cumulative_chart = build_cumulative_chart(cumulative_df)
-            st.altair_chart(cumulative_chart, use_container_width=True)
+            st.plotly_chart(cumulative_chart, use_container_width=True)
 
     row_two_left, row_two_right = st.columns([3, 2], gap="medium")
     with row_two_left:
