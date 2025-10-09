@@ -1,195 +1,31 @@
-"""Utilities for preparing dashboard data from the spending CSV."""
+"""Analytical helpers used by the PlainSpend summary service."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import date
-from pathlib import Path
 from statistics import NormalDist
-from typing import Optional, Tuple, TypedDict
+from typing import Optional, Tuple
 
 import numpy as np
 import pandas as pd
 
-from .forecast import CashflowRunway, compute_cashflow_runway
-from .recurring import (
-    DuplicateEntry,
-    RecurringEntry,
-    detect_duplicate_transactions,
-    detect_recurring_transactions,
-)
+from core.models import DailyForecastPoint, ProjectionResult, ProgressRow, VendorRow
+
+__all__ = [
+    "prepare_expenses",
+    "resolve_target_period",
+    "resolve_current_day",
+    "build_daily_spend",
+    "compute_projection",
+    "compute_category_total",
+    "build_category_breakdown",
+    "build_progress_rows",
+    "build_vendor_rows",
+    "build_daily_and_cumulative_frames",
+]
 
 
-class ProgressRow(TypedDict):
-    category: str
-    label: str
-    delta: str
-    width: int
-
-
-class VendorRow(TypedDict):
-    category: str
-    label: str
-    amount: float
-    share: float
-
-
-class MonthlySummary(TypedDict):
-    total: float
-    delta: str
-    avg_day: float
-    highest_day: float
-    subscriptions: float
-    projected_total: float
-    projection_low: float
-    projection_high: float
-    projection_confidence: float
-    days_elapsed: int
-    days_remaining: int
-    month_label: str
-
-
-class DashboardData(TypedDict):
-    daily_spend_df: pd.DataFrame
-    cumulative_spend_df: pd.DataFrame
-    category_df: pd.DataFrame
-    progress_rows: list[ProgressRow]
-    vendor_rows: list[VendorRow]
-    insights: list[str]
-    monthly_summary: MonthlySummary
-    recurring_entries: list[RecurringEntry]
-    duplicate_entries: list[DuplicateEntry]
-    cashflow_runway: CashflowRunway
-
-
-@dataclass(frozen=True)
-class ProjectionResult:
-    projected_total: float
-    low: float
-    high: float
-    days_remaining: int
-    days_elapsed: int
-    daily_forecast: list["DailyForecastPoint"]
-
-
-@dataclass(frozen=True)
-class DailyForecastPoint:
-    date: pd.Timestamp
-    mean: float
-    std: float
-
-
-def prepare_dashboard_data(
-    csv_path: str | Path,
-    target_date: Optional[date] = None,
-    confidence: float = 0.68,
-) -> DashboardData:
-    """Create dashboard-friendly aggregates from a transactions CSV."""
-
-    csv_path = Path(csv_path)
-    if not csv_path.exists():
-        raise FileNotFoundError(f"CSV file not found: {csv_path}")
-
-    df = _load_transactions(csv_path)
-    if df.empty:
-        raise ValueError("The provided CSV contains no transactions.")
-
-    expenses = _prepare_expenses(df)
-    if expenses.empty:
-        raise ValueError("No spend transactions available after filtering income and duplicates.")
-
-    target_period = _resolve_target_period(expenses, target_date)
-    previous_period = target_period - 1
-
-    current_month_all = df[df["date"].dt.to_period("M") == target_period]
-    current_month_expenses = expenses[expenses["date"].dt.to_period("M") == target_period]
-    previous_month_expenses = expenses[expenses["date"].dt.to_period("M") == previous_period]
-
-    month_start = target_period.to_timestamp(how="start")
-    month_end = target_period.to_timestamp(how="end")
-    current_day = _resolve_current_day(current_month_all, month_end)
-
-    daily_spend = _build_daily_spend(current_month_expenses, month_start, current_day)
-    projection = _compute_projection(daily_spend, current_day, month_end, confidence)
-    daily_spend_df, cumulative_spend_df = _build_daily_and_cumulative_frames(
-        daily_spend, projection
-    )
-
-    total_spend = float(daily_spend.sum())
-    prev_total = float(previous_month_expenses["spend"].sum())
-    avg_day = float(total_spend / projection.days_elapsed) if projection.days_elapsed else 0.0
-    highest_day = float(daily_spend.max()) if not daily_spend.empty else 0.0
-    subscriptions_total = _compute_category_total(current_month_expenses, "subscriptions")
-
-    delta_label = _format_delta(total_spend, prev_total)
-
-    category_df = _build_category_breakdown(current_month_expenses, previous_month_expenses)
-    progress_rows = _build_progress_rows(current_month_expenses, total_spend)
-    vendor_rows = _build_vendor_rows(current_month_expenses)
-    insights = _build_insights(
-        total_spend=total_spend,
-        delta_label=delta_label,
-        projection=projection,
-        confidence=confidence,
-        top_category=category_df.iloc[0] if not category_df.empty else None,
-        top_vendor=vendor_rows[0] if vendor_rows else None,
-    )
-
-    recurring_entries = detect_recurring_transactions(expenses, current_day)
-    duplicate_entries = detect_duplicate_transactions(current_month_expenses)
-
-    incomes = df[df["category"].str.lower() == "income"].copy()
-    cashflow_runway = compute_cashflow_runway(
-        expenses=expenses,
-        incomes=incomes,
-        today=current_day,
-        total_spend_to_date=total_spend,
-        projected_total=projection.projected_total,
-        days_remaining=projection.days_remaining,
-        recurring_entries=recurring_entries,
-    )
-
-    month_label = target_period.strftime("%B %Y")
-
-    summary: MonthlySummary = {
-        "total": total_spend,
-        "delta": delta_label,
-        "avg_day": avg_day,
-        "highest_day": highest_day,
-        "subscriptions": subscriptions_total,
-        "projected_total": projection.projected_total,
-        "projection_low": projection.low,
-        "projection_high": projection.high,
-        "projection_confidence": confidence,
-        "days_elapsed": projection.days_elapsed,
-        "days_remaining": projection.days_remaining,
-        "month_label": month_label,
-    }
-
-    return {
-        "daily_spend_df": daily_spend_df,
-        "cumulative_spend_df": cumulative_spend_df,
-        "category_df": category_df,
-        "progress_rows": progress_rows,
-        "vendor_rows": vendor_rows,
-        "insights": insights,
-        "monthly_summary": summary,
-        "recurring_entries": recurring_entries,
-        "duplicate_entries": duplicate_entries,
-        "cashflow_runway": cashflow_runway,
-    }
-
-
-def _load_transactions(csv_path: Path) -> pd.DataFrame:
-    df = pd.read_csv(csv_path, parse_dates=["date"])
-    df = df[~df["txn_id"].str.contains("_dup", case=False, na=False)]
-    df = df[~df["note"].str.contains("duplicate", case=False, na=False)]
-    df["category"] = df["category"].fillna("uncategorized")
-    df["is_refund"] = df["is_refund"].fillna(False)
-    return df
-
-
-def _prepare_expenses(df: pd.DataFrame) -> pd.DataFrame:
+def prepare_expenses(df: pd.DataFrame) -> pd.DataFrame:
     expenses = df[df["category"].str.lower() != "income"].copy()
     expenses["category_label"] = expenses["category"].str.replace("_", " ").str.title()
     expenses["spend"] = np.where(expenses["amount"] < 0, -expenses["amount"], 0.0)
@@ -198,38 +34,38 @@ def _prepare_expenses(df: pd.DataFrame) -> pd.DataFrame:
     return expenses
 
 
-def _resolve_target_period(expenses: pd.DataFrame, target_date: Optional[date]) -> pd.Period:
+def resolve_target_period(expenses: pd.DataFrame, target_date: Optional[date]) -> pd.Period:
     if target_date is not None:
         return pd.Period(target_date, freq="M")
     latest_date = expenses["date"].max()
     return latest_date.to_period("M")
 
 
-def _resolve_current_day(month_df: pd.DataFrame, month_end: pd.Timestamp) -> pd.Timestamp:
+def resolve_current_day(month_df: pd.DataFrame, month_end: pd.Timestamp) -> pd.Timestamp:
     if month_df.empty:
         return month_end
     observed_max = month_df["date"].max().normalize()
     return min(observed_max, month_end)
 
 
-def _build_daily_spend(
-	expenses: pd.DataFrame,
-	month_start: pd.Timestamp,
-	current_day: pd.Timestamp,
+def build_daily_spend(
+    expenses: pd.DataFrame,
+    month_start: pd.Timestamp,
+    current_day: pd.Timestamp,
 ) -> pd.Series:
-	if current_day < month_start:
-		return pd.Series(dtype=float)
+    if current_day < month_start:
+        return pd.Series(dtype=float)
 
-	index = pd.date_range(month_start, current_day, freq="D")
-	grouped = (
-		expenses.groupby(pd.Grouper(key="date", freq="D"))["spend"].sum().reindex(index, fill_value=0.0)
-	)
-	grouped = grouped.astype(float)
-	grouped.index.name = "Day"
-	return grouped
+    index = pd.date_range(month_start, current_day, freq="D")
+    grouped = (
+        expenses.groupby(pd.Grouper(key="date", freq="D"))["spend"].sum().reindex(index, fill_value=0.0)
+    )
+    grouped = grouped.astype(float)
+    grouped.index.name = "Day"
+    return grouped
 
 
-def _compute_projection(
+def compute_projection(
     daily_spend: pd.Series,
     current_day: pd.Timestamp,
     month_end: pd.Timestamp,
@@ -310,7 +146,7 @@ def _compute_projection(
     return ProjectionResult(projected_total, low, high, len(future_days), days_elapsed, daily_points)
 
 
-def _compute_category_total(expenses: pd.DataFrame, category_name: str) -> float:
+def compute_category_total(expenses: pd.DataFrame, category_name: str) -> float:
     mask = expenses["category"].str.lower() == category_name.lower()
     if not mask.any():
         return 0.0
@@ -318,7 +154,7 @@ def _compute_category_total(expenses: pd.DataFrame, category_name: str) -> float
     return float(max(total, 0.0))
 
 
-def _build_category_breakdown(
+def build_category_breakdown(
     current_expenses: pd.DataFrame,
     previous_expenses: pd.DataFrame,
 ) -> pd.DataFrame:
@@ -366,7 +202,7 @@ def _build_category_breakdown(
     return breakdown
 
 
-def _build_progress_rows(expenses: pd.DataFrame, total_spend: float) -> list[ProgressRow]:
+def build_progress_rows(expenses: pd.DataFrame, total_spend: float) -> list[ProgressRow]:
     rows: list[ProgressRow] = []
     if total_spend <= 0:
         return rows
@@ -398,7 +234,7 @@ def _build_progress_rows(expenses: pd.DataFrame, total_spend: float) -> list[Pro
     return rows
 
 
-def _build_vendor_rows(expenses: pd.DataFrame) -> list[VendorRow]:
+def build_vendor_rows(expenses: pd.DataFrame) -> list[VendorRow]:
     merchant_totals = (
         expenses.groupby(["category_label", "description"])["spend"].sum().reset_index()
     )
@@ -429,9 +265,9 @@ def _build_vendor_rows(expenses: pd.DataFrame) -> list[VendorRow]:
     return vendor_rows
 
 
-def _build_daily_and_cumulative_frames(
+def build_daily_and_cumulative_frames(
     daily_spend: pd.Series, projection: ProjectionResult
-) -> tuple[pd.DataFrame, pd.DataFrame]:
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
     daily_records: list[dict[str, object]] = []
     cumulative_records: list[dict[str, object]] = []
 
@@ -486,59 +322,3 @@ def _build_daily_and_cumulative_frames(
         cumulative_df = cumulative_df.sort_values("Day")
 
     return daily_df, cumulative_df
-
-
-def _build_insights(
-    *,
-    total_spend: float,
-    delta_label: str,
-    projection: ProjectionResult,
-    confidence: float,
-    top_category: Optional[pd.Series],
-    top_vendor: Optional[VendorRow],
-) -> list[str]:
-    insights: list[str] = []
-
-    conf_pct = int(round(confidence * 100))
-    if abs(projection.high - projection.low) < 1e-6:
-        projection_text = f"Projection: <strong>£{projection.projected_total:,.0f}</strong>"
-    else:
-        projection_text = (
-            f"Projection: <strong>£{projection.low:,.0f}–£{projection.high:,.0f}</strong>"
-        )
-
-    insights.append(
-        (
-            f"You've spent <strong>£{total_spend:,.0f}</strong> so far ({delta_label}). "
-            f"{projection_text} ({conf_pct}% confidence)."
-        )
-    )
-
-    if top_category is not None and not top_category.empty:
-        insights.append(
-            (
-                f"Top category: <strong>{top_category['Category']}</strong> at "
-                f"£{top_category['CurrentValue']:,.0f}."
-            )
-        )
-
-    if top_vendor is not None:
-        insights.append(
-            (
-                f"Largest merchant: <strong>{top_vendor['label']}</strong> "
-                f"(£{top_vendor['amount']:,.0f})."
-            )
-        )
-
-    return insights
-
-
-def _format_delta(current: float, previous: float) -> str:
-    if previous <= 0:
-        if current <= 0:
-            return "No change vs last month"
-        return "New vs last month"
-
-    change = (current - previous) / previous
-    sign = "+" if change >= 0 else ""
-    return f"{sign}{change * 100:.1f}% vs last month"

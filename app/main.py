@@ -9,12 +9,13 @@ from typing import Any, Mapping, Sequence
 import pandas as pd
 import streamlit as st
 
-from lib.ai_summary import AISummaryError, generate_ai_summary
-from lib.summary import (
+from core import (
+    AISummaryError,
     DashboardData,
     MonthlySummary,
     ProgressRow,
     VendorRow,
+    generate_ai_summary,
     prepare_dashboard_data,
 )
 from ui.charts import (

@@ -5,6 +5,11 @@ A Streamlit dashboard for exploring synthetic spending insights, featuring polis
 ## Project structure
 
 - `app/main.py` — Streamlit entrypoint orchestrating layout and data loading.
+- `core/summary_service.py` — Core data aggregation pipeline for dashboard metrics.
+- `core/summary.py` — High-level summary APIs including AI insights helpers.
+- `core/analytics.py` — Analytical helpers for spend trends and projections.
+- `core/data_loader.py` — Cached CSV reader powering the analytics stack.
+- `core/models.py` — Typed data structures shared across the dashboard.
 - `lib/` — Data preparation utilities and forecasting helpers.
 - `ui/components.py` — Reusable UI building blocks (cards, global styles).
 - `ui/charts.py` — Centralised Plotly chart builders for consistency across the app.
@@ -38,6 +43,10 @@ Install development dependencies (for example, `pip install pytest`) and run:
 ```bash
 pytest
 ```
+
+### AI client overrides
+
+During tests you can inject a stand-in OpenAI client via the `client_factory` parameter on `core.generate_ai_summary`, avoiding real API calls.
 
 ## Pages
 

@@ -1,41 +1,46 @@
-"""AI-assisted summary generation for PlainSpend."""
+"""High-level summary APIs combining analytics and AI insights."""
 
 from __future__ import annotations
 
-import json
-import os
 from dataclasses import dataclass
-from typing import Any, Iterable, Mapping, Union
+from typing import Any, Callable, Iterable, Mapping
 
 import pandas as pd
 import streamlit as st
 from openai import APIError, OpenAI
 
-from .summary import DashboardData, ProgressRow
+from core.models import DashboardData, ProgressRow
+from core.summary_service import prepare_dashboard_data
 
 DEFAULT_MODEL = "gpt-4o-mini"
 MAX_OUTPUT_TOKENS = 400
+
+__all__ = [
+    "AISummaryError",
+    "AISummaryRequest",
+    "build_ai_summary_request",
+    "generate_ai_summary",
+    "prepare_dashboard_data",
+]
 
 
 class AISummaryError(RuntimeError):
     """Raised when the AI summary cannot be generated."""
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class AISummaryRequest:
-    payload: dict[str, Any]
+    payload: Mapping[str, Any]
     month_label: str
-    model: str = DEFAULT_MODEL
-    mode: str = "overview"
+    model: str
+    mode: str
 
 
 def _resolve_openai_client() -> OpenAI:
-    """Construct an OpenAI client using Streamlit secrets or env vars."""
-
     api_key: str | None = None
     api_base: str | None = None
 
-    secrets_section: dict[str, Any] | None = None
+    secrets_section: Mapping[str, Any] | None = None
     try:
         if hasattr(st, "secrets") and "openai" in st.secrets:
             secrets_section = dict(st.secrets["openai"])  # type: ignore[arg-type]
@@ -46,8 +51,11 @@ def _resolve_openai_client() -> OpenAI:
         api_key = secrets_section.get("api_key") or secrets_section.get("OPENAI_API_KEY")
         api_base = secrets_section.get("api_base")
 
-    api_key = api_key or os.getenv("OPENAI_API_KEY")
-    api_base = api_base or os.getenv("OPENAI_BASE_URL")
+    if api_key is None:
+        import os
+
+        api_key = os.getenv("OPENAI_API_KEY")
+        api_base = api_base or os.getenv("OPENAI_BASE_URL")
 
     if not api_key:
         raise AISummaryError(
@@ -132,24 +140,13 @@ def _detect_anomalies(categories: Iterable[dict[str, Any]]) -> list[dict[str, An
     return anomalies[:5]
 
 
-ProgressInput = Union[ProgressRow, Mapping[str, Any]]
-
-
-def _extract_subscriptions(progress_rows: Iterable[ProgressInput]) -> list[dict[str, Any]]:
+def _extract_subscriptions(progress_rows: Iterable[ProgressRow]) -> list[dict[str, Any]]:
     subs: list[dict[str, Any]] = []
     for row in progress_rows:
-        if isinstance(row, Mapping):
-            category = str(row.get("category", "")).lower()
-            label = str(row.get("label", ""))
-            detail = str(row.get("delta", ""))
-        else:
-            category = str(row.category).lower()  # type: ignore[attr-defined]
-            label = str(row.label)  # type: ignore[attr-defined]
-            detail = str(row.delta)  # type: ignore[attr-defined]
-
+        category = str(row["category"]).lower()
         if category != "subscriptions":
             continue
-        subs.append({"merchant": label, "detail": detail})
+        subs.append({"merchant": str(row["label"]), "detail": str(row["delta"])})
 
     return subs[:5]
 
@@ -234,8 +231,6 @@ def _summarise_duplicates(entries: Iterable[Mapping[str, Any]]) -> list[dict[str
 
 
 def build_ai_summary_request(data: DashboardData, mode: str = "overview") -> AISummaryRequest:
-    """Create a payload ready to be sent to the OpenAI API."""
-
     safe_mode = mode if mode in {"overview", "insights"} else "overview"
 
     summary = data["monthly_summary"]
@@ -295,19 +290,21 @@ def build_ai_summary_request(data: DashboardData, mode: str = "overview") -> AIS
     except Exception:  # pragma: no cover - streamlit secrets access failure
         model = DEFAULT_MODEL
 
-    return AISummaryRequest(
-        payload=payload,
-        month_label=summary["month_label"],
-        model=model,
-        mode=safe_mode,
-    )
+    return AISummaryRequest(payload=payload, month_label=summary["month_label"], model=model, mode=safe_mode)
 
 
-def generate_ai_summary(data: DashboardData, mode: str = "overview") -> list[str]:
-    """Generate a list of bullet point insights using OpenAI."""
+def _default_client_factory() -> OpenAI:
+    return _resolve_openai_client()
 
+
+def generate_ai_summary(
+    data: DashboardData,
+    mode: str = "overview",
+    *,
+    client_factory: Callable[[], OpenAI] | None = None,
+) -> list[str]:
     request = build_ai_summary_request(data, mode=mode)
-    client = _resolve_openai_client()
+    client = (client_factory or _default_client_factory)()
 
     if request.mode == "insights":
         system_prompt = (
@@ -337,7 +334,7 @@ def generate_ai_summary(data: DashboardData, mode: str = "overview") -> list[str
             " Include concrete figures for notable increases or decreases and subscription call-outs."
         )
 
-    formatted_payload = json.dumps(request.payload, ensure_ascii=False, indent=2)
+    formatted_payload = _format_payload(request.payload)
     user_message = (
         f"Analyse the spending context for {request.month_label}.\n"
         f"Guidance: {guidance}\n\n"
@@ -370,6 +367,12 @@ def generate_ai_summary(data: DashboardData, mode: str = "overview") -> list[str
     return bullets
 
 
+def _format_payload(payload: Mapping[str, Any]) -> str:
+    import json
+
+    return json.dumps(payload, ensure_ascii=False, indent=2)
+
+
 def _normalise_output(response_text: str) -> list[str]:
     normalized: list[str] = []
     for line in response_text.splitlines():
@@ -380,11 +383,3 @@ def _normalise_output(response_text: str) -> list[str]:
             stripped = stripped[2:].strip()
         normalized.append(stripped)
     return normalized
-
-
-__all__ = [
-    "AISummaryError",
-    "AISummaryRequest",
-    "build_ai_summary_request",
-    "generate_ai_summary",
-]
