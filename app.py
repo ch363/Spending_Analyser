@@ -34,20 +34,55 @@ st.set_page_config(
 
 DATA_PATH = Path("data/seed.csv")
 
+NAV_LINKS: list[tuple[str, str, bool]] = [
+    ("overview", "Dashboard", True),
+    ("insights", "Insights", True),
+    ("help", "Help", False),
+    ("settings", "Settings", False),
+]
 
-def _render_navbar() -> None:
-    """Render the dashboard navigation bar."""
+
+def _get_active_page() -> str:
+    """Determine the active page from the URL query params or session state."""
+
+    params = st.experimental_get_query_params()
+    raw_page = params.get("page", [st.session_state.get("active_page", "overview")])[0]
+    valid_pages = {slug for slug, _, is_enabled in NAV_LINKS if is_enabled}
+    page = raw_page if raw_page in valid_pages else "overview"
+
+    if st.session_state.get("active_page") != page:
+        st.session_state["active_page"] = page
+
+    if params.get("page", [None])[0] != page:
+        st.experimental_set_query_params(page=page)
+
+    return page
+
+
+def _render_navbar(active_page: str) -> None:
+    """Render the dashboard navigation bar with active state."""
+
+    link_markup: list[str] = []
+    for slug, label, is_enabled in NAV_LINKS:
+        css_class = "ps-nav__link"
+        aria_current = ""
+        if slug == active_page:
+            css_class += " is-active"
+            aria_current = ' aria-current="page"'
+
+        if is_enabled:
+            href = f"?page={slug}"
+            link_markup.append(
+                f'<a class="{css_class}" href="{href}"{aria_current} data-page="{slug}">{label}</a>'
+            )
+        else:
+            link_markup.append(f'<span class="{css_class} is-disabled">{label}</span>')
 
     st.markdown(
-        """
+        f"""
         <nav class="ps-nav">
             <div class="ps-nav__brand">PlainSpend</div>
-            <div class="ps-nav__links">
-                <span class="ps-nav__link is-active">Dashboard</span>
-                <span class="ps-nav__link">Insights</span>
-                <span class="ps-nav__link">Help</span>
-                <span class="ps-nav__link">Settings</span>
-            </div>
+            <div class="ps-nav__links">{''.join(link_markup)}</div>
         </nav>
         """,
         unsafe_allow_html=True,
@@ -182,6 +217,77 @@ def _render_dashboard(data: DashboardData, ai_insights: list[str]) -> None:
         _render_insights_card(ai_insights)
 
 
+def _render_overview_page(data: DashboardData, ai_insights: list[str]) -> None:
+    """Render the main dashboard overview page."""
+
+    st.title("Overview")
+    st.caption("Synthetic spending insights for PlainSpend.")
+    _render_dashboard(data, ai_insights)
+
+
+def _render_insights_page(data: DashboardData, ai_insights: list[str]) -> None:
+    """Render the insights page scaffold with deeper analytics placeholders."""
+
+    st.title("Insights")
+    st.caption("Deep dives, AI narratives, and areas to watch this month.")
+
+    summary = data["monthly_summary"]
+
+    highlights_col, summary_col = st.columns((2, 1), gap="medium")
+    with highlights_col:
+        with card("AI highlights", suffix="Generated"):
+            if ai_insights:
+                _render_insights_card(ai_insights)
+            else:
+                st.info("AI highlights will appear here once available.")
+
+    with summary_col:
+        with card("Spending pulse", suffix=summary["month_label"]):
+            st.metric("Total spend", f"£{summary['total']:,.0f}", summary["delta"])
+            st.metric("Avg per day", f"£{summary['avg_day']:,.0f}")
+            st.metric("Days remaining", summary["days_remaining"])
+
+    with card("Category movers", suffix="Top shifts"):
+        category_df = data["category_df"]
+        if category_df.empty:
+            st.info("Once category spend is available, you'll see the biggest movers here.")
+        else:
+            movers = (
+                category_df[["Category", "CurrentValue", "ChangeAmount", "PctChange"]]
+                .sort_values("ChangeAmount", ascending=False)
+                .head(5)
+                .copy()
+            )
+            items = []
+            for _, row in movers.iterrows():
+                pct_change = row["PctChange"]
+                pct_display = (
+                    f" ({pct_change:+.1%})"
+                    if pct_change is not None and not pd.isna(pct_change)
+                    else ""
+                )
+                items.append(
+                    f"<li><strong>{row['Category']}</strong> · £{row['CurrentValue']:,.0f}"
+                    f" ({row['ChangeAmount']:+,.0f}{pct_display})</li>"
+                )
+            st.markdown(
+                f"<ul class='ps-insights'>{''.join(items)}</ul>",
+                unsafe_allow_html=True,
+            )
+
+    with card("Upcoming enhancements", suffix="Roadmap"):
+        st.markdown(
+            """
+            <ul class='ps-insights'>
+              <li>Benchmark your categories against historic spend to spot unusual shifts.</li>
+              <li>Break down recurring subscriptions and upcoming renewals.</li>
+              <li>Experiment with new AI narratives tailored to your saving goals.</li>
+            </ul>
+            """,
+            unsafe_allow_html=True,
+        )
+
+
 @st.cache_data(show_spinner=False)
 def _load_dashboard_data() -> DashboardData:
     """Load and cache dashboard data from the CSV seed file."""
@@ -193,13 +299,16 @@ def main() -> None:
     """Application entrypoint for the PlainSpend dashboard."""
 
     inject_css()
-    _render_navbar()
-    st.title("Overview")
-    st.caption("Synthetic spending insights for PlainSpend.")
-    data = _load_dashboard_data()
+    active_page = _get_active_page()
+    _render_navbar(active_page)
 
+    data = _load_dashboard_data()
     ai_insights = _resolve_ai_summary(data)
-    _render_dashboard(data, ai_insights)
+
+    if active_page == "insights":
+        _render_insights_page(data, ai_insights)
+    else:
+        _render_overview_page(data, ai_insights)
 
 
 def _resolve_ai_summary(data: DashboardData) -> list[str]:

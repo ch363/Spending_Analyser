@@ -30,6 +30,11 @@ A Streamlit dashboard for exploring synthetic spending insights, featuring polis
    streamlit run app.py
    ```
 
+## Pages
+
+- **Overview** — The main dashboard with monthly metrics, charts, and AI highlights.
+- **Insights** — A scaffolded deep-dive view that reuses AI highlights, surfaces top category movers, and maps upcoming enhancements. Access it via the navigation bar at the top of the app.
+
 ## Development tips
 
 - Chart styling lives in `ui/charts.py`; update there to keep visuals consistent.

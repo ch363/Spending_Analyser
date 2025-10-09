@@ -52,10 +52,14 @@ def inject_css() -> None:
             gap: 1.8rem;
           }
 
-          .ps-nav__link {
+          .ps-nav__link,
+          .ps-nav__link:visited {
             position: relative;
+            display: inline-flex;
+            align-items: center;
             font-weight: 600;
             color: #5C6478;
+            text-decoration: none;
             transition: color 0.2s ease;
           }
 
@@ -76,6 +80,13 @@ def inject_css() -> None:
             height: 3px;
             border-radius: 999px;
             background: linear-gradient(90deg, #1D4ED8, #0EA5E9);
+          }
+
+          .ps-nav__link.is-disabled {
+            color: #B7C1D9;
+            cursor: not-allowed;
+            pointer-events: none;
+            opacity: 0.7;
           }
 
           @media (max-width: 768px) {
