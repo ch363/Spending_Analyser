@@ -11,8 +11,8 @@ A Streamlit dashboard for exploring synthetic spending insights, featuring polis
 - `core/data_loader.py` — Cached CSV reader powering the analytics stack.
 - `core/models.py` — Typed data structures shared across the dashboard.
 - `lib/` — Synthetic data generation utilities for seeding the app.
-- `ui/components.py` — Reusable UI building blocks (cards, global styles).
-- `ui/charts.py` — Centralised Plotly chart builders for consistency across the app.
+- `app/layout.py` — Reusable UI building blocks (cards, global styles, navigation helpers).
+- `visualization/charts.py` — Centralised Plotly chart builders for consistency across the app.
 - `data/seed.csv` — Seed dataset used to power the dashboard.
 - `tests/` — Pytest suite scaffold with smoke checks for the app package.
 
@@ -55,9 +55,9 @@ During tests you can inject a stand-in OpenAI client via the `client_factory` pa
 
 ## Development tips
 
-- Chart styling lives in `ui/charts.py`; update there to keep visuals consistent.
+- Chart styling lives in `visualization/charts.py`; update there to keep visuals consistent.
 - Cached data loading follows Streamlit best practices via `@st.cache_data` to avoid redundant CSV reads.
-- UI tweaks such as card layout or navigation styles belong in `ui/components.py`.
+- UI tweaks such as card layout or navigation styles belong in `app/layout.py`.
 - AI-powered insights are generated via `lib/ai_summary.py`, with a runtime fallback to heuristic insights if the API is unavailable.
 
 ## Advanced analytics

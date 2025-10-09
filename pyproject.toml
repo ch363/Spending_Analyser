@@ -23,11 +23,11 @@ dependencies = [
 Homepage = "https://github.com/ch363/Spending_Analyser"
 
 [tool.setuptools]
-packages = ["analytics", "app", "core", "lib", "ui"]
+packages = ["analytics", "app", "core", "lib", "visualization"]
 
 [tool.setuptools.package-dir]
 analytics = "analytics"
 app = "app"
 core = "core"
 lib = "lib"
-ui = "ui"
+visualization = "visualization"
