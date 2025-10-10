@@ -21,7 +21,7 @@ def _render_this_month_card(summary: MonthlySummary) -> None:
     metric_cols = st.columns((1, 1, 1))
     metric_cols[0].metric("Avg day", f"£{summary['avg_day']:,.0f}")
     metric_cols[1].metric("Highest day", f"£{summary['highest_day']:,.0f}")
-    metric_cols[2].metric("Subscriptions (MTD)", f"£{summary['subscriptions']:,.0f}")
+    metric_cols[2].metric("Subscriptions", f"£{summary['subscriptions']:,.0f}")
     if summary["days_remaining"] > 0:
         projection_text = (
             f"Projected month-end: £{summary['projection_low']:,.0f}–£{summary['projection_high']:,.0f} "

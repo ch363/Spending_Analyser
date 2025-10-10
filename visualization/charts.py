@@ -164,6 +164,7 @@ def _compute_ai_projection_path(
 
     actual_sorted = actual_totals.sort_values("Day").copy()
     start_day = actual_sorted["Day"].iloc[0]
+    last_actual_day = actual_sorted["Day"].iloc[-1]
     end_candidates = []
     if not projected_totals.empty:
         end_candidates.append(projected_totals["Day"].max())
@@ -176,6 +177,14 @@ def _compute_ai_projection_path(
 
     x = (actual_sorted["Day"] - start_day).dt.days.to_numpy(dtype=float)
     y = actual_sorted["Total"].to_numpy(dtype=float)
+
+    actual_increments = np.diff(y)
+    positive_increments = actual_increments[actual_increments > 0]
+    baseline_increment = float(np.median(positive_increments)) if positive_increments.size else 0.0
+    if actual_increments.size:
+        recent_window = min(5, actual_increments.size)
+        recent_mean = float(np.mean(np.clip(actual_increments[-recent_window:], 0.0, None)))
+        baseline_increment = max(baseline_increment, recent_mean)
 
     if len(actual_sorted) == 1:
         predictions = np.full(len(all_days), y[0], dtype=float)
@@ -196,6 +205,17 @@ def _compute_ai_projection_path(
         predictions = np.maximum(predictions, 0.0)
 
     actual_map = actual_sorted.set_index("Day")["Total"]
+    projected_map = (
+        projected_totals.assign(Total=projected_totals["Total"].astype(float)).set_index("Day")["Total"]
+        if not projected_totals.empty
+        else pd.Series(dtype=float)
+    )
+    if baseline_increment <= 0 and not projected_totals.empty:
+        projected_growth = (
+            projected_totals["Total"].astype(float).diff().clip(lower=0.0).dropna()
+        )
+        if not projected_growth.empty:
+            baseline_increment = float(projected_growth.iloc[0])
     last_total = float(actual_map.iloc[-1])
     expected_values: list[float] = []
     for day, predicted in zip(all_days, predictions):
@@ -203,12 +223,15 @@ def _compute_ai_projection_path(
             value = float(actual_map.loc[day])
             last_total = value
         else:
-            value = max(float(predicted), last_total)
+            days_ahead = max(int((day - last_actual_day).days), 1)
+            fallback = last_total + baseline_increment * days_ahead
+            value = max(float(predicted), fallback, last_total)
             last_total = value
         if not projected_totals.empty:
-            projected_match = projected_totals.loc[projected_totals["Day"] == day, "Total"]
-            if not projected_match.empty:
-                value = min(value, float(projected_match.iloc[-1]))
+            projected_match = projected_map.get(day)
+            if pd.notna(projected_match):
+                blend = 0.65 * float(projected_match) + 0.35 * value
+                value = min(blend, float(projected_match))
         expected_values.append(value)
 
     if not projected_totals.empty:

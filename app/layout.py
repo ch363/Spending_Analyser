@@ -8,6 +8,7 @@ from typing import Iterable
 
 import pandas as pd
 import streamlit as st
+from streamlit.components.v1 import html as components_html
 
 
 @dataclass(frozen=True)
@@ -253,7 +254,7 @@ def sidebar_link(label: str, page: str, active_page: str, month_key: str | None)
     href = f"?page={page}"
     if month_key:
         href += f"&month={month_key}"
-    return f"<a href='{href}' class='{css_classes}'{aria_current}>{label}</a>"
+    return f"<a href='{href}' class='{css_classes}'{aria_current} target='_self'>{label}</a>"
 
 
 def render_navbar(active_page: str, month_key: str | None) -> None:
@@ -272,7 +273,7 @@ def render_navbar(active_page: str, month_key: str | None) -> None:
             if month_key:
                 href += f"&month={month_key}"
             link_markup.append(
-                f'<a class="{css_class}" href="{href}"{aria_current} data-page="{link.slug}">{link.label}</a>'
+                f'<a class="{css_class}" href="{href}"{aria_current} data-page="{link.slug}" target="_self">{link.label}</a>'
             )
         else:
             link_markup.append(f'<span class="{css_class} is-disabled">{link.label}</span>')
@@ -286,6 +287,7 @@ def render_navbar(active_page: str, month_key: str | None) -> None:
         """,
         unsafe_allow_html=True,
     )
+    _enforce_same_tab_navigation()
 
 
 def render_sidebar_filters(
@@ -335,7 +337,37 @@ def render_sidebar_filters(
             unsafe_allow_html=True,
         )
 
+    _enforce_same_tab_navigation()
     return chosen_month
+
+
+def _enforce_same_tab_navigation() -> None:
+    """Ensure navigation links stay within the same browser tab."""
+
+    components_html(
+        """
+        <script>
+        (function() {
+          if (window.parent && !window.parent.__psNavSameTab) {
+            window.parent.__psNavSameTab = true;
+            const enforce = () => {
+              const anchors = window.parent.document.querySelectorAll('a.ps-nav__link, a.ps-sidebar-link');
+              anchors.forEach((anchor) => {
+                if (anchor.target && anchor.target.toLowerCase() !== '_self') {
+                  anchor.target = '_self';
+                }
+              });
+            };
+            enforce();
+            const observer = new MutationObserver(enforce);
+            observer.observe(window.parent.document.body, { childList: true, subtree: true });
+          }
+        })();
+        </script>
+        """,
+        height=0,
+        width=0,
+    )
 
 
 def determine_active_page(valid_pages: Iterable[str]) -> str:
